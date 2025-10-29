@@ -590,7 +590,9 @@
             document.getElementById('checkout-modal').classList.add('hidden');
         };
 
-        /** Confirms and records the stock removal transaction */
+        /** * Confirms and records the stock removal transaction.
+         * FIX: Iterate through cart and run a separate, dedicated transaction for each item to reduce contention.
+         */
         window.confirmRemoval = async () => {
             const staffName = document.getElementById('staff-name').value.trim();
             const locationId = selectedLocationId;
@@ -607,82 +609,103 @@
             }
 
             closeCheckoutModal();
-            showMessageModal("Processing...", "Recording transaction and updating stock levels. Please wait (transaction may retry).");
+            showMessageModal("Processing...", "Recording transaction and updating stock levels. Please wait (processing each item separately for stability).");
 
             const locName = locations.find(l => l.id === locationId)?.name;
-            let success = true;
             
-            try {
-                // Use a transaction (runTransaction) to ensure atomicity and consistency
-                await runTransaction(db, async (t) => {
-                    
-                    for (const [itemId, quantityRemoved] of itemsToUpdate) {
-                        const itemName = items.find(i => i.id === itemId)?.name;
-                        
-                        // 1. Get Stock Level (READ)
-                        const stockDocId = `${locationId}_${itemId}`;
-                        const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
-                        
+            let successfulItems = [];
+            let failedItems = [];
+            const logCollectionRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
+
+            // Loop through each item and run a separate, dedicated transaction for maximum stability
+            for (const [itemId, quantityRemoved] of itemsToUpdate) {
+                const itemName = items.find(i => i.id === itemId)?.name;
+                const stockDocId = `${locationId}_${itemId}`;
+                const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
+                
+                let itemSuccess = false;
+                
+                try {
+                    // Transaction 1: Atomically update the stock level for this single item
+                    await runTransaction(db, async (t) => {
                         const stockSnap = await t.get(stockRef);
                         
-                        // STRICTURE CHECK: Ensure stock document exists before trying to modify it
                         if (!stockSnap.exists()) {
-                             // If we try to remove stock from a document that doesn't exist, current stock is 0.
-                            throw new Error(`Item ${itemName} not found in stock for this location (current quantity is 0).`);
+                            // If stock doc doesn't exist, treat current quantity as 0.
+                            throw new Error(`Item ${itemName} not found in stock (current quantity is 0).`);
                         }
                         
                         const currentQuantity = stockSnap.data().quantity;
                         const newQuantity = currentQuantity - quantityRemoved;
                         
                         if (newQuantity < 0) {
-                            // Throwing an error here automatically rolls back the transaction
                             throw new Error(`Insufficient stock for ${itemName}. Only ${currentQuantity} available.`);
                         }
                         
-                        // 2. Update Stock Level (WRITE using transaction object t)
+                        // Update Stock Level (WRITE using transaction object t)
                         t.set(stockRef, { 
                             locationId, 
                             itemId, 
                             quantity: newQuantity 
                         }, { merge: true });
+                    });
+                    
+                    // After successful stock update, record the transaction log entry (non-atomic with stock update, but highly reliable)
+                    await addDoc(logCollectionRef, {
+                        type: 'removal',
+                        staffName: staffName,
+                        location: locName,
+                        itemId: itemId,
+                        item: itemName,
+                        quantity: -quantityRemoved,
+                        timestamp: Timestamp.now()
+                    });
 
-                        // 3. Record Transaction (WRITE using transaction object t)
-                        // Use a new document reference in the private collection
-                        const transactionRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
-                        t.set(transactionRef, {
-                            type: 'removal',
-                            staffName: staffName,
-                            location: locName,
-                            itemId: itemId,
-                            item: itemName,
-                            quantity: -quantityRemoved, // Use negative for removal
-                            timestamp: Timestamp.now()
-                        });
-                    }
-                    // The transaction automatically commits all t.set/t.update operations here
-                });
-                
-            } catch (error) {
-                success = false;
-                console.error("Transaction failed: ", error);
-                
-                let errorMessage;
-                if (error.message.includes("Insufficient stock") || error.message.includes("not found")) {
-                    errorMessage = error.message;
-                } else {
-                    // This error indicates the optimistic lock failure occurred after all retries
-                    errorMessage = "The stock update failed due to high contention or a version mismatch. Please try the transaction again.";
+                    itemSuccess = true;
+                    successfulItems.push(itemName);
+
+                } catch (error) {
+                    failedItems.push({ 
+                        name: itemName, 
+                        message: error.message.includes("Insufficient stock") ? error.message : "Failed due to contention/retry limit." 
+                    });
+                    console.error(`Transaction failed for item ${itemName}: `, error);
                 }
-                
-                showMessageModal("Transaction Failed", errorMessage);
+
+                if (itemSuccess) {
+                    delete removalCart[itemId]; // Remove item from cart if successful
+                }
             }
 
-            if (success) {
-                removalCart = {}; // Clear cart on success
-                document.getElementById('staff-name').value = '';
-                renderCart();
-                closeMessageModal();
-                showMessageModal("Success!", "Stock removal recorded and levels updated.");
+            // Report the final result
+            document.getElementById('staff-name').value = '';
+            renderCart();
+            closeMessageModal();
+
+            if (successfulItems.length > 0) {
+                let message = `Successfully removed stock for: **${successfulItems.join(', ')}**.`;
+                
+                if (failedItems.length > 0) {
+                    message += `<br><br><span class="text-red-600 font-bold">WARNING: Failed to remove:</span><ul>`;
+                    failedItems.forEach(f => {
+                         // Find the original quantity that was attempted for the failed item
+                        const failedAttempt = itemsToUpdate.find(([id, ]) => id === items.find(i => i.name === f.name)?.id)?.[1];
+                        message += `<li>${f.name} (Qty: ${failedAttempt}): ${f.message}</li>`;
+                    });
+                    message += `</ul><p class="mt-2 text-sm text-gray-500">The failed items remain in your cart. Please try again.</p>`;
+                    showMessageModal("Partial Success", message);
+                } else {
+                    showMessageModal("Success!", "Stock removal recorded and levels updated for all items.");
+                }
+            } else {
+                // All items failed
+                let message = `All removal attempts failed. Please check current stock levels and try again.`;
+                if (failedItems.length > 0) {
+                    message = `All items failed to update:<ul>`;
+                    failedItems.forEach(f => message += `<li>${f.name}: ${f.message}</li>`);
+                    message += `</ul>`;
+                }
+                showMessageModal("Transaction Failed", message);
             }
         };
 
@@ -711,7 +734,7 @@
                 document.getElementById('admin-panel').classList.remove('hidden');
                 document.getElementById('main-content').classList.add('md:flex-wrap'); // Adjust layout for admin view
                 document.getElementById('summary-card').classList.add('hidden'); // Hide login card
-                document.getElementById('staff-view').classList.add('hidden'); // Hide staff view on admin login
+                document.getElementById('staff-view').classList.add('hidden'); // Hide staff view on admin login (New Requirement)
                 toggleAdminLogin();
                 showAdminTab(activeAdminTab); // Ensure content is rendered
                 // Re-render admin content on successful login
@@ -728,7 +751,7 @@
             document.getElementById('admin-panel').classList.add('hidden');
             document.getElementById('main-content').classList.remove('md:flex-wrap');
             document.getElementById('summary-card').classList.remove('hidden');
-            document.getElementById('staff-view').classList.remove('hidden'); // Show staff view on admin logout
+            document.getElementById('staff-view').classList.remove('hidden'); // Show staff view on admin logout (New Requirement)
             showMessageModal("Logout", "You have been logged out of the Admin Panel.");
         };
 
@@ -783,6 +806,7 @@
                 const quantityClass = t.quantity > 0 ? 'text-green-600' : (t.quantity < 0 ? 'text-red-600' : 'text-gray-600');
                 const typeClass = t.type === 'removal' ? 'bg-red-100 text-red-800' : (t.type === 'addition' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800');
                 
+                // Pass all necessary info to the delete function
                 return `
                     <tr class="border-b hover:bg-gray-50">
                         <td class="py-3 px-4 whitespace-nowrap text-sm text-gray-700">${date}</td>
@@ -794,7 +818,7 @@
                         <td class="py-3 px-4 whitespace-nowrap text-sm font-bold ${quantityClass}">${t.quantity}</td>
                         <td class="py-3 px-4 text-sm text-gray-700">${t.staffName || 'Admin'}</td>
                         <td class="py-3 px-4 whitespace-nowrap text-sm">
-                            <button onclick="deleteTransaction('${t.id}', ${t.quantity}, '${t.location}', '${t.item}')" 
+                            <button onclick="deleteTransaction('${t.id}', ${t.quantity}, '${t.location.replace(/'/g, "\\'")}', '${t.item.replace(/'/g, "\\'")}')" 
                                 class="py-1 px-2 bg-red-500 text-white rounded-lg text-xs hover:bg-red-600 transition duration-150">
                                 Delete
                             </button>
@@ -815,7 +839,7 @@
 
             const warningBody = `
                 <p class="text-gray-700 mb-4">You are about to delete a transaction recorded for **${itemName}** at **${locationName}**.</p>
-                <p class="text-red-600 font-bold mb-4">WARNING: This will automatically ${action} the stock level by ${absAdjustment} to reverse the change.</p>
+                <p class="text-red-600 font-bold mb-4">WARNING: This will automatically **${action}** the stock level for this item by **${absAdjustment}** to reverse the transaction's effect.</p>
                 <p class="text-sm text-gray-500">Do you wish to proceed?</p>
             `;
 
@@ -830,7 +854,8 @@
                 const location = locations.find(l => l.name === locationName);
 
                 if (!item || !location) {
-                    showMessageModal("Error", "Could not find associated item or location data. Cannot adjust stock.");
+                    showMessageModal("Error", "Could not find associated item or location data. Cannot adjust stock, but the log entry will be removed.");
+                    await deleteDoc(transactionRef);
                     return;
                 }
                 
@@ -838,35 +863,42 @@
                 const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
 
                 try {
+                    // Use a transaction for the atomic delete and stock reversal
                     await runTransaction(db, async (t) => {
                         // 1. Read Stock Document
                         const stockSnap = await t.get(stockRef);
                         
                         if (!stockSnap.exists()) {
-                            // If stock document is missing, proceed with transaction deletion, but log warning.
-                            console.warn(`Stock level document for ${itemName} at ${locationName} not found. Deleting log entry only.`);
-                            // We don't throw an error here to ensure the log entry is deleted.
-                        } else {
-                            const currentQuantity = stockSnap.data().quantity;
-                            const newQuantity = currentQuantity + stockAdjustment;
-
-                            if (newQuantity < 0) {
-                                // Rollback the transaction if it results in negative stock
-                                throw new Error(`Reversing this transaction would result in negative stock (${currentQuantity} + ${stockAdjustment} = ${newQuantity}). Aborting deletion.`);
-                            }
-                            
-                            // 2. Update Stock Document
-                            t.update(stockRef, { quantity: newQuantity });
+                            // If stock document is missing, proceed with transaction deletion, but throw an error for the user to see.
+                            throw new Error(`Stock document not found for reversal. Log entry deleted.`);
                         }
                         
-                        // 3. Delete Transaction Document (Always attempt to delete log entry)
+                        const currentQuantity = stockSnap.data().quantity;
+                        const newQuantity = currentQuantity + stockAdjustment;
+
+                        if (newQuantity < 0) {
+                            // Rollback the transaction if it results in negative stock
+                            throw new Error(`Reversing this transaction would result in negative stock (${currentQuantity} + ${stockAdjustment} = ${newQuantity}). Aborting.`);
+                        }
+                        
+                        // 2. Update Stock Document
+                        t.update(stockRef, { quantity: newQuantity });
+                        
+                        // 3. Delete Transaction Document
                         t.delete(transactionRef);
                     });
 
                     showMessageModal("Success", `Transaction deleted and stock for ${itemName} at ${locationName} adjusted by ${stockAdjustment}.`);
                 } catch (error) {
                     console.error("Atomic Deletion/Adjustment failed: ", error);
-                    showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
+                    // Check if it's the "Stock document not found" error to provide a softer message
+                    if (error.message.includes("Stock document not found for reversal")) {
+                         // Fallback: Just delete the log entry if stock reversal failed due to missing stock doc
+                        await deleteDoc(transactionRef);
+                        showMessageModal("Partial Success", `Transaction deleted. Stock adjustment failed because the stock item was not found.`);
+                    } else {
+                        showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
+                    }
                 }
             };
 
@@ -1469,7 +1501,7 @@
         window.performStockCheckAdjustment = performStockCheckAdjustment;
         window.performMassUpdate = performMassUpdate;
         window.saveLowStockComment = saveLowStockComment;
-        window.deleteTransaction = deleteTransaction; // New exported function
+        window.deleteTransaction = deleteTransaction;
 
         initializeFirebase();
     </script>
