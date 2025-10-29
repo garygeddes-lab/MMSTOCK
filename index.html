@@ -4,25 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mitchell & Murdoch Stock Control</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https:
     <!-- Load Inter font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https:
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        'primary-purple': '#5A67D8', // Deep Purple
-                        'secondary-teal': '#38B2AC', // Strong Teal
+                        'primary-purple': '#5A67D8',
+                        'secondary-teal': '#38B2AC',
                         'background-light': '#F7FAFC',
                         'card-light': '#FFFFFF',
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
-                    }
-                }
-            }
-        }
+}
     </script>
     <style>
         .container-fluid {
@@ -31,7 +28,6 @@
         .admin-nav-item:hover, .admin-nav-item.active {
             @apply bg-secondary-teal text-white shadow-lg;
         }
-        /* Custom scrollbar for better appearance */
         ::-webkit-scrollbar {
             width: 8px;
         }
@@ -60,7 +56,6 @@
             <!-- Staff View (Always visible until admin login) -->
             <div id="staff-view" class="w-full md:w-2/3 bg-card-light shadow-xl rounded-xl p-6 transition-all duration-300">
                 <h2 class="text-2xl font-semibold mb-4 text-secondary-teal border-b pb-2">Staff Stock Removal</h2>
-                
                 <!-- NEW: Selected Location Banner for UX clarity -->
                 <div id="selected-location-banner" class="mb-4 hidden">
                     <p class="text-lg font-bold p-3 rounded-lg bg-secondary-teal text-white shadow-md text-center">
@@ -114,7 +109,6 @@
         <div id="admin-panel" class="hidden w-full max-w-6xl mt-6 bg-card-light shadow-2xl rounded-xl p-6">
             <h2 class="text-3xl font-bold mb-6 text-primary-purple">Admin Control Panel</h2>
             <div class="flex flex-col md:flex-row gap-6">
-                
                 <!-- Admin Navigation -->
                 <nav class="md:w-1/4">
                     <ul class="space-y-2">
@@ -138,7 +132,8 @@
                                 <option value="">Filter by Location</option>
                                 <!-- Options populated by JS -->
                             </select>
-                            <input type="date" id="log-filter-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
+                            <input type="date" id="log-filter-start-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="Start Date">
+<input type="date" id="log-filter-end-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="End Date">
                             <button onclick="applyLogFilters()" class="py-2 px-4 bg-primary-purple text-white rounded-lg hover:bg-primary-purple/90 transition duration-150">Apply Filters</button>
                             <button onclick="exportLog()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Download Log (CSV)</button>
                         </div>
@@ -158,7 +153,6 @@
 
                     <div id="admin-tab-stock-check" class="admin-tab-content hidden">
                         <h3 class="text-2xl font-semibold mb-4 text-secondary-teal">Stock Check and Adjustment</h3>
-                        
                         <!-- Location Selection for Stock Check -->
                         <div class="mb-6">
                             <p class="text-sm font-medium mb-2 text-gray-700">Select Location for Count:</p>
@@ -213,7 +207,6 @@
                             <input type="text" id="new-item-name" placeholder="New Item Name (e.g., Aprons)" class="p-2 border rounded-lg w-full mb-2">
                             <input type="number" id="new-item-threshold" placeholder="Minimum Stock Threshold" class="p-2 border rounded-lg w-full mb-2">
                             <button onclick="addItem()" class="w-full py-2 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Add New Stock Item</button>
-                            
                             <div id="item-list" class="mt-4 space-y-2">
                                 <p class="text-gray-500 italic">Loading items...</p>
                             </div>
@@ -224,7 +217,6 @@
                             <h4 class="text-xl font-semibold mb-3 text-primary-purple">Manage Stock Locations</h4>
                             <input type="text" id="new-location-name" placeholder="New Location Name (e.g., Edinburgh)" class="p-2 border rounded-lg w-full mb-2">
                             <button onclick="addLocation()" class="w-full py-2 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Add New Location</button>
-                            
                             <div id="location-list" class="mt-4 space-y-2">
                                 <p class="text-gray-500 italic">Loading locations...</p>
                             </div>
@@ -257,7 +249,6 @@
     <div id="checkout-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md m-4 transform transition-all duration-300">
             <h3 class="text-2xl font-bold mb-4 text-primary-purple">Confirm Stock Removal</h3>
-            
             <p class="mb-4 text-gray-700">You are removing stock from <span id="checkout-location-name" class="font-bold text-secondary-teal"></span>.</p>
 
             <div id="checkout-summary" class="mb-4 p-3 bg-gray-50 border rounded-lg">
@@ -268,7 +259,6 @@
             </div>
 
             <input type="text" id="staff-name" placeholder="Your Name (Required)" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-primary-purple focus:border-primary-purple">
-            
             <button onclick="confirmRemoval()" class="w-full py-3 bg-primary-purple text-white font-bold rounded-lg shadow-md hover:bg-primary-purple/90 transition duration-150 ease-in-out">
                 Confirm & Record Transaction
             </button>
@@ -291,42 +281,27 @@
     </div>
 
     <script type="module">
-        // Firebase Imports
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc, getDocs, Timestamp, writeBatch, runTransaction, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global Firebase and App Variables
+        import { initializeApp } from "https:
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https:
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc, getDocs, Timestamp, writeBatch, runTransaction, setLogLevel } from "https:
         let app;
         let db;
         let auth;
-        let userId = 'anonymous'; // Default ID
+        let userId = 'anonymous';
         let currentAuthUser = null;
-
-        // Data Models
-        let locations = []; // { id, name }
-        let items = [];     // { id, name, threshold }
-        let stockLevels = []; // { locationId, itemId, quantity, itemName, locationName }
-        let transactions = []; // Full transaction history for admin log
-        let lowStockComments = {}; // { commentId: { comment, lastUpdate, ... } }
-        
-        // Front-End State
+        let locations = [];
+        let items = [];
+        let stockLevels = [];
+        let transactions = [];
+        let lowStockComments = {};
         let selectedLocationId = null;
-        let removalCart = {}; // { itemId: quantity_to_remove }
-        
-        // Admin State
+        let removalCart = {};
         const ADMIN_PASSWORD = 'admin123';
         let isAdmin = false;
         let activeAdminTab = 'log';
         let stockCheckLocationId = null;
-
-        // --- Firebase Configuration and Environment Variables ---
-        
-        // The __app_id and __initial_auth_token are provided by the hosting environment.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        // User-provided Firebase Configuration
         const firebaseConfig = {
             apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
             authDomain: "mmstock-8bcdf.firebaseapp.com",
@@ -336,38 +311,26 @@
             appId: "1:935228101629:web:766421e0da43becc323f94",
             measurementId: "G-NWJ4Z7ZHT8"
         };
-
-        // --- Utility Functions ---
-
-        /** Shows a generic modal message */
         window.showMessageModal = (title, body) => {
             document.getElementById('message-title').textContent = title;
             document.getElementById('message-body').innerHTML = body;
-            
             const modalActions = document.getElementById('modal-actions');
             modalActions.innerHTML = `
                 <button onclick="closeMessageModal()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150 w-full">Close</button>
             `;
-            
             document.getElementById('message-modal').classList.remove('hidden');
         };
-
-        /** Closes the generic modal message */
         window.closeMessageModal = () => {
             document.getElementById('message-modal').classList.add('hidden');
         };
-
-        /** Converts array of objects to CSV string */
         const toCSV = (data) => {
             if (data.length === 0) return '';
             const header = Object.keys(data[0]).join(',');
-            const rows = data.map(obj => Object.values(obj).map(v => 
+            const rows = data.map(obj => Object.values(obj).map(v =>
                 `"${String(v).replace(/"/g, '""')}"`
             ).join(','));
             return [header, ...rows].join('\n');
         };
-
-        /** Downloads content as a file */
         const downloadFile = (filename, content, mimeType) => {
             const blob = new Blob([content], { type: mimeType });
             const url = URL.createObjectURL(blob);
@@ -379,9 +342,6 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         };
-
-        // --- Firebase Initialization and Authentication ---
-
         const initializeFirebase = async () => {
             if (!Object.keys(firebaseConfig).length) {
                 console.error("Firebase config is missing or invalid.");
@@ -389,48 +349,33 @@
             }
 
             try {
-                setLogLevel('debug'); // Enable for detailed logs
+                setLogLevel('debug');
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
-
-                // Authentication
                 await new Promise((resolve) => {
                     const unsubscribe = onAuthStateChanged(auth, async (user) => {
                         currentAuthUser = user;
                         if (user) {
                             userId = user.uid;
                         } else {
-                            // If no user, sign in anonymously as a fallback for the public data view
                             if (initialAuthToken) {
                                 await signInWithCustomToken(auth, initialAuthToken);
                             } else {
                                 await signInAnonymously(auth);
-                            }
-                        }
-                        unsubscribe(); // Stop listening after initial auth is resolved
+}
+                        unsubscribe();
                         resolve();
                     });
                 });
-
-                console.log("Firebase Initialized. User ID:", userId);
-                
-                // Start listening to collections
                 setupFirestoreListeners();
-                // Clean up old transactions on initial load
-                cleanUpOldTransactions(); 
+                cleanUpOldTransactions();
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
                 showMessageModal("Initialization Error", "Failed to connect to the database. Please check console for details.");
-            }
-        };
-
-        // --- Firestore Data Listeners (Real-time Updates) ---
-
+};
         const setupFirestoreListeners = () => {
             if (!db || !userId) return;
-
-            // 1. Locations Listener (Private Data)
             const locationsColRef = collection(db, `/artifacts/${appId}/users/${userId}/locations`);
             onSnapshot(locationsColRef, (snapshot) => {
                 locations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -438,81 +383,53 @@
                 renderAdminSettings();
                 renderAdminLocationFilters();
                 renderAdminLocationSelects();
-                console.log("Locations updated:", locations);
-                // Ensure banner is hidden if no location is selected (e.g., on first load)
                 if (!selectedLocationId) {
                     document.getElementById('selected-location-banner').classList.add('hidden');
-                }
-            }, (error) => console.error("Error fetching locations:", error));
-
-            // 2. Items Listener (Private Data)
+}, (error) => console.error("Error fetching locations:", error));
             const itemsColRef = collection(db, `/artifacts/${appId}/users/${userId}/items`);
             onSnapshot(itemsColRef, (snapshot) => {
                 items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderAdminSettings();
                 renderAdminItemSelects();
                 renderStockDisplay();
-                checkAndClearLowStockComments(); // Check for clearance when item thresholds might change
+                checkAndClearLowStockComments();
                 if (isAdmin) renderLowStockReport();
-                console.log("Items updated:", items);
             }, (error) => console.error("Error fetching items:", error));
-
-            // 3. Stock Levels Listener (Public Data) - Correct 5-segment path
             const stockLevelsColRef = collection(db, `/artifacts/${appId}/public/data/stock_levels`);
             onSnapshot(stockLevelsColRef, (snapshot) => {
                 stockLevels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderStockDisplay();
-                checkAndClearLowStockComments(); // Check for clearance when stock levels change
+                checkAndClearLowStockComments();
                 if (isAdmin) renderLowStockReport();
-                console.log("Stock levels updated:", stockLevels.length);
             }, (error) => console.error("Error fetching stock levels:", error));
-
-            // 4. Transactions Listener (Private Data, Admin only)
             const transactionsColRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
             onSnapshot(transactionsColRef, (snapshot) => {
                 transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                     .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
-                
                 if (isAdmin) renderTransactionLog();
-                console.log("Transactions updated:", transactions.length);
             }, (error) => console.error("Error fetching transactions:", error));
-            
-            // 5. Low Stock Comments Listener (Public Data)
             const commentsRef = collection(db, `/artifacts/${appId}/public/data/low_stock_comments`);
             onSnapshot(commentsRef, (snapshot) => {
                 lowStockComments = {};
                 snapshot.forEach(doc => lowStockComments[doc.id] = doc.data());
-                // The main clearance check happens when stock levels change (listener 3)
                 if (isAdmin) renderLowStockReport();
-                console.log("Low stock comments updated.");
             }, (error) => console.error("Error fetching low stock comments:", error));
         };
-
-        /**
-         * Core logic to automatically delete low stock comments if the stock level 
-         * has recovered (quantity > threshold). This ensures the Admin report clears itself.
-         */
         const checkAndClearLowStockComments = async () => {
             if (!db || items.length === 0 || locations.length === 0 || Object.keys(lowStockComments).length === 0) return;
 
             const commentsToDelete = [];
             const commentsRef = collection(db, `/artifacts/${appId}/public/data/low_stock_comments`);
-
-            // Check every stock level against its threshold
             for (const sl of stockLevels) {
                 const item = items.find(i => i.id === sl.itemId);
                 if (!item) continue;
 
                 const commentId = `${sl.locationId}_${sl.itemId}`;
-                
-                // If stock is healthy AND a comment exists
                 if (sl.quantity > item.threshold && lowStockComments[commentId]) {
                     commentsToDelete.push(commentId);
-                }
-            }
+}
 
             if (commentsToDelete.length > 0) {
-                console.log(`Clearing ${commentsToDelete.length} low stock comments as stock levels recovered.`);
                 const batch = writeBatch(db);
                 for (const id of commentsToDelete) {
                     const commentRef = doc(commentsRef, id);
@@ -522,80 +439,51 @@
                     await batch.commit();
                 } catch (error) {
                     console.error("Batch delete of low stock comments failed:", error);
-                }
-            }
-        };
-
-        /**
-         * Implements the 60-day data retention policy by deleting old transaction records.
-         */
+};
         const cleanUpOldTransactions = async () => {
             if (!db || !userId) return;
-
-            // Calculate cutoff date (60 days ago)
             const sixtyDays = 60 * 24 * 60 * 60 * 1000;
             const cutoffDate = Timestamp.fromMillis(Date.now() - sixtyDays);
 
             const transactionsColRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
-            
-            // Query for documents older than 60 days
             const q = query(transactionsColRef, where('timestamp', '<', cutoffDate));
-            
             try {
                 const snapshot = await getDocs(q);
                 if (snapshot.empty) {
-                    console.log("No transactions older than 60 days to clean up.");
                     return;
                 }
-
-                console.log(`Found ${snapshot.docs.length} transactions to delete for retention policy.`);
                 const batch = writeBatch(db);
-                
                 snapshot.docs.forEach(doc => {
                     batch.delete(doc.ref);
                 });
 
                 await batch.commit();
-                console.log("Old transactions successfully cleaned up.");
             } catch (error) {
                 console.error("Error cleaning up old transactions:", error);
-                // Show a non-blocking message to the console, but not the user
-            }
-        };
-
-
-        // --- Frontend (Staff) Logic ---
-
-        /** Renders location buttons for staff selection */
+};
         const renderLocationButtons = () => {
             const container = document.getElementById('location-buttons');
             container.innerHTML = locations.map(loc => `
-                <button 
+                <button
                     onclick="selectLocation('${loc.id}')"
-                    class="loc-button py-2 px-4 rounded-lg font-medium transition duration-150 
+                    class="loc-button py-2 px-4 rounded-lg font-medium transition duration-150
                     ${selectedLocationId === loc.id ? 'bg-primary-purple text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-primary-purple/20'}"
                     data-location-id="${loc.id}">
                     ${loc.name}
                 </button>
             `).join('');
         };
-
-        /** Sets the currently selected location */
         window.selectLocation = (locationId) => {
             selectedLocationId = locationId;
-            removalCart = {}; // Clear cart on location switch
+            removalCart = {};
             renderLocationButtons();
             renderStockDisplay();
             renderCart();
             document.getElementById('stock-message').classList.add('hidden');
-            
-            // --- UX Improvement: Show selected location banner ---
             const locName = locations.find(l => l.id === locationId)?.name;
             document.getElementById('current-removal-location').textContent = locName;
             document.getElementById('selected-location-banner').classList.remove('hidden');
         };
-
-        /** Renders the main stock level display and action buttons */
         const renderStockDisplay = () => {
             const container = document.getElementById('stock-display');
             if (!selectedLocationId) {
@@ -610,7 +498,7 @@
                     const item = items.find(i => i.id === sl.itemId);
                     return item ? { ...sl, itemName: item.name, threshold: item.threshold } : null;
                 })
-                .filter(Boolean); // Filter out items with no definition
+                .filter(Boolean);
 
             if (stockForLocation.length === 0) {
                 container.innerHTML = `<p class="text-gray-500 italic">No stock data available for ${currentLoc?.name || 'this location'}.</p>`;
@@ -621,7 +509,6 @@
                 const isLow = stock.quantity <= stock.threshold;
                 const quantityInCart = removalCart[stock.itemId] || 0;
                 const currentQuantity = stock.quantity - quantityInCart;
-                
                 return `
                     <div class="flex items-center justify-between p-3 border rounded-lg ${isLow ? 'border-red-500 bg-red-50' : 'border-gray-200'}">
                         <div class="flex flex-col">
@@ -630,7 +517,7 @@
                         </div>
                         <div class="flex items-center space-x-2">
                             <span class="text-lg font-bold text-primary-purple">${quantityInCart > 0 ? `In Cart: ${quantityInCart}` : ''}</span>
-                            <button onclick="addToCart('${stock.itemId}', '${stock.itemName}', ${stock.quantity})" 
+                            <button onclick="addToCart('${stock.itemId}', '${stock.itemName}', ${stock.quantity})"
                                 class="py-2 px-4 bg-secondary-teal text-white rounded-lg shadow-sm hover:bg-secondary-teal/90 transition duration-150 disabled:opacity-50"
                                 ${currentQuantity <= 0 ? 'disabled' : ''}>
                                 Remove 1 Item
@@ -640,20 +527,15 @@
                 `;
             }).join('');
         };
-        
-        /** Adds one unit of an item to the removal cart */
         window.addToCart = (itemId, itemName, currentStock) => {
             const currentCartQuantity = removalCart[itemId] || 0;
             if (currentCartQuantity < currentStock) {
                 removalCart[itemId] = currentCartQuantity + 1;
                 renderCart();
-                renderStockDisplay(); // Update display to show reduced available stock
+                renderStockDisplay();
             } else {
                 showMessageModal("Stock Limit Reached", `You cannot remove more ${itemName} than is currently available (${currentStock} items).`);
-            }
-        };
-
-        /** Renders the current removal cart summary */
+};
         const renderCart = () => {
             const cartItems = Object.entries(removalCart)
                 .filter(([, qty]) => qty > 0)
@@ -685,20 +567,28 @@
             renderCart();
             renderStockDisplay();
         };
-
-        /** Opens the checkout modal */
         window.openCheckoutModal = () => {
-            document.getElementById('checkout-modal').classList.remove('hidden');
-        };
+    const cartItems = Object.entries(removalCart)
+        .filter(([, qty]) => qty > 0)
+        .map(([itemId, qty]) => ({
+            itemName: items.find(i => i.id === itemId)?.name || 'Unknown Item',
+            qty
+        }));
 
-        /** Closes the checkout modal */
+    const listContainer = document.getElementById('checkout-cart-list');
+    if (cartItems.length === 0) {
+        listContainer.innerHTML = '<li class="text-gray-500 italic">No items selected for removal.</li>';
+    } else {
+        listContainer.innerHTML = cartItems.map(item =>
+            `<li>${item.itemName} — <strong>${item.qty}</strong></li>`
+        ).join('');
+    }
+
+    document.getElementById('checkout-modal').classList.remove('hidden');
+};
         window.closeCheckoutModal = () => {
             document.getElementById('checkout-modal').classList.add('hidden');
         };
-
-        /** * Confirms and records the stock removal transaction.
-         * FIX: Iterate through cart and run a separate, dedicated transaction for each item to reduce contention.
-         */
         window.confirmRemoval = async () => {
             const staffName = document.getElementById('staff-name').value.trim();
             const locationId = selectedLocationId;
@@ -718,45 +608,31 @@
             showMessageModal("Processing...", "Recording transaction and updating stock levels. Please wait (processing each item separately for stability).");
 
             const locName = locations.find(l => l.id === locationId)?.name;
-            
             let successfulItems = [];
             let failedItems = [];
             const logCollectionRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
-
-            // Loop through each item and run a separate, dedicated transaction for maximum stability
             for (const [itemId, quantityRemoved] of itemsToUpdate) {
                 const itemName = items.find(i => i.id === itemId)?.name;
                 const stockDocId = `${locationId}_${itemId}`;
                 const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
-                
                 let itemSuccess = false;
-                
                 try {
-                    // Transaction 1: Atomically update the stock level for this single item
                     await runTransaction(db, async (t) => {
                         const stockSnap = await t.get(stockRef);
-                        
                         if (!stockSnap.exists()) {
-                            // If stock doc doesn't exist, treat current quantity as 0.
                             throw new Error(`Item ${itemName} not found in stock (current quantity is 0).`);
                         }
-                        
                         const currentQuantity = stockSnap.data().quantity;
                         const newQuantity = currentQuantity - quantityRemoved;
-                        
                         if (newQuantity < 0) {
                             throw new Error(`Insufficient stock for ${itemName}. Only ${currentQuantity} available.`);
                         }
-                        
-                        // Update Stock Level (WRITE using transaction object t)
-                        t.set(stockRef, { 
-                            locationId, 
-                            itemId, 
-                            quantity: newQuantity 
+                        t.set(stockRef, {
+                            locationId,
+                            itemId,
+                            quantity: newQuantity
                         }, { merge: true });
                     });
-                    
-                    // After successful stock update, record the transaction log entry (non-atomic with stock update, but highly reliable)
                     await addDoc(logCollectionRef, {
                         type: 'removal',
                         staffName: staffName,
@@ -771,30 +647,25 @@
                     successfulItems.push(itemName);
 
                 } catch (error) {
-                    failedItems.push({ 
-                        name: itemName, 
-                        message: error.message.includes("Insufficient stock") ? error.message : "Failed due to contention/retry limit." 
+                    failedItems.push({
+                        name: itemName,
+                        message: error.message.includes("Insufficient stock") ? error.message : "Failed due to contention/retry limit."
                     });
                     console.error(`Transaction failed for item ${itemName}: `, error);
                 }
 
                 if (itemSuccess) {
-                    delete removalCart[itemId]; // Remove item from cart if successful
-                }
-            }
-
-            // Report the final result
+                    delete removalCart[itemId];
+}
             document.getElementById('staff-name').value = '';
             renderCart();
             closeMessageModal();
 
             if (successfulItems.length > 0) {
                 let message = `Successfully removed stock for: **${successfulItems.join(', ')}**.`;
-                
                 if (failedItems.length > 0) {
                     message += `<br><br><span class="text-red-600 font-bold">WARNING: Failed to remove:</span><ul>`;
                     failedItems.forEach(f => {
-                         // Find the original quantity that was attempted for the failed item
                         const failedAttempt = itemsToUpdate.find(([id, ]) => id === items.find(i => i.name === f.name)?.id)?.[1];
                         message += `<li>${f.name} (Qty: ${failedAttempt}): ${f.message}</li>`;
                     });
@@ -802,9 +673,7 @@
                     showMessageModal("Partial Success", message);
                 } else {
                     showMessageModal("Success!", "Stock removal recorded and levels updated for all items.");
-                }
-            } else {
-                // All items failed
+} else {
                 let message = `All removal attempts failed. Please check current stock levels and try again.`;
                 if (failedItems.length > 0) {
                     message = `All items failed to update:<ul>`;
@@ -812,25 +681,7 @@
                     message += `</ul>`;
                 }
                 showMessageModal("Transaction Failed", message);
-            }
-        };
-
-        // --- Admin Logic ---
-
-        /** Toggles Admin Login Modal visibility */
-        window.toggleAdminLogin = () => {
-            const modal = document.getElementById('admin-login-modal');
-            const error = document.getElementById('login-error');
-            if (modal.classList.contains('hidden')) {
-                modal.classList.remove('hidden');
-                document.getElementById('admin-password').value = '';
-                error.classList.add('hidden');
-            } else {
-                modal.classList.add('hidden');
-            }
-        };
-
-        /** Handles Admin Login authentication (local password check) */
+};
         window.adminLogin = () => {
             const password = document.getElementById('admin-password').value;
             const error = document.getElementById('login-error');
@@ -838,30 +689,24 @@
             if (password === ADMIN_PASSWORD) {
                 isAdmin = true;
                 document.getElementById('admin-panel').classList.remove('hidden');
-                document.getElementById('main-content').classList.add('md:flex-wrap'); // Adjust layout for admin view
-                document.getElementById('summary-card').classList.add('hidden'); // Hide login card
-                document.getElementById('staff-view').classList.add('hidden'); // Hide staff view on admin login (New Requirement)
+                document.getElementById('main-content').classList.add('md:flex-wrap');
+                document.getElementById('summary-card').classList.add('hidden');
+                document.getElementById('staff-view').classList.add('hidden');
                 toggleAdminLogin();
-                showAdminTab(activeAdminTab); // Ensure content is rendered
-                // Re-render admin content on successful login
+                showAdminTab(activeAdminTab);
                 renderTransactionLog();
                 renderLowStockReport();
             } else {
                 error.classList.remove('hidden');
-            }
-        };
-
-        /** Handles Admin Logout */
+};
         window.adminLogout = () => {
             isAdmin = false;
             document.getElementById('admin-panel').classList.add('hidden');
             document.getElementById('main-content').classList.remove('md:flex-wrap');
             document.getElementById('summary-card').classList.remove('hidden');
-            document.getElementById('staff-view').classList.remove('hidden'); // Show staff view on admin logout (New Requirement)
+            document.getElementById('staff-view').classList.remove('hidden');
             showMessageModal("Logout", "You have been logged out of the Admin Panel.");
         };
-
-        /** Switches between admin tabs */
         window.showAdminTab = (tabId) => {
             activeAdminTab = tabId;
             document.querySelectorAll('.admin-tab-content').forEach(el => el.classList.add('hidden'));
@@ -872,27 +717,18 @@
                 target.classList.remove('hidden');
                 document.querySelector(`.admin-nav-item[onclick*="'${tabId}'"]`).classList.add('active');
             }
-
-            // Specific re-renders for tabs
             if (tabId === 'log') renderTransactionLog();
             if (tabId === 'low-stock') renderLowStockReport();
             if (tabId === 'settings') renderAdminSettings();
             if (tabId === 'stock-check') renderStockCheckLocations();
         };
-        
-        // --- Admin: Transaction Log ---
-
-        /** Renders the transaction log table based on current filters */
         const renderTransactionLog = (filteredTransactions = transactions) => {
             const tableContainer = document.getElementById('transaction-log-table');
-            
-            // Add retention policy note
             const retentionNote = `
                 <div class="p-3 mb-4 bg-yellow-100 border border-yellow-400 rounded-lg text-sm text-yellow-800 font-medium">
                     Note: Transaction log data is automatically deleted after **60 days** to comply with retention policies.
                 </div>
             `;
-            
             if (filteredTransactions.length === 0) {
                 tableContainer.innerHTML = retentionNote + '<p class="text-gray-500 italic mt-4">No transactions found matching criteria.</p>';
                 return;
@@ -919,8 +755,6 @@
                 const date = t.timestamp ? new Date(t.timestamp.seconds * 1000).toLocaleString() : 'N/A';
                 const quantityClass = t.quantity > 0 ? 'text-green-600' : (t.quantity < 0 ? 'text-red-600' : 'text-gray-600');
                 const typeClass = t.type === 'removal' ? 'bg-red-100 text-red-800' : (t.type === 'addition' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800');
-                
-                // Pass all necessary info to the delete function
                 return `
                     <tr class="border-b hover:bg-gray-50">
                         <td class="py-3 px-4 whitespace-nowrap text-sm text-gray-700">${date}</td>
@@ -932,7 +766,7 @@
                         <td class="py-3 px-4 whitespace-nowrap text-sm font-bold ${quantityClass}">${t.quantity}</td>
                         <td class="py-3 px-4 text-sm text-gray-700">${t.staffName || 'Admin'}</td>
                         <td class="py-3 px-4 whitespace-nowrap text-sm">
-                            <button onclick="deleteTransaction('${t.id}', ${t.quantity}, '${t.location.replace(/'/g, "\\'")}', '${t.item.replace(/'/g, "\\'")}')" 
+                            <button onclick="deleteTransaction('${t.id}', ${t.quantity}, '${t.location.replace(/'/g, "\\'")}', '${t.item.replace(/'/g, "\\'")}')"
                                 class="py-1 px-2 bg-red-500 text-white rounded-lg text-xs hover:bg-red-600 transition duration-150">
                                 Delete
                             </button>
@@ -943,10 +777,7 @@
 
             tableContainer.innerHTML = header + rows + '</tbody></table>';
         };
-
-        /** Executes the atomic deletion of a transaction and reverses the stock change */
 window.deleteTransaction = (transactionId, quantityChange, locationName, itemName) => {
-    // The stock adjustment is the reverse of the recorded quantity
     const stockAdjustment = -quantityChange;
     const action = stockAdjustment > 0 ? 'increase' : 'decrease';
     const absAdjustment = Math.abs(stockAdjustment);
@@ -956,8 +787,6 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
         <p class="text-red-600 font-bold mb-4">WARNING: This will automatically ${action} the stock level for this item by ${absAdjustment} to reverse the transaction's effect.</p>
         <p class="text-sm text-gray-500">Do you wish to proceed?</p>
     `;
-
-    // Define and attach performDeletion globally so the button can find it
     window.performDeletion = async () => {
         closeMessageModal();
         showMessageModal("Processing...", "Deleting transaction and adjusting stock. Please wait...");
@@ -1003,11 +832,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 showMessageModal("Partial Success", `Transaction deleted. Stock adjustment failed because the stock item was not found.`);
             } else {
                 showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
-            }
-        }
-    };
-
-    // Create and show the confirmation modal
+};
     document.getElementById('message-title').textContent = "Confirm Transaction Deletion";
     document.getElementById('message-body').innerHTML = warningBody;
 
@@ -1021,27 +846,28 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
 };
 
         window.applyLogFilters = () => {
-            const staffFilter = document.getElementById('log-filter-staff').value.toLowerCase();
-            const locationFilter = document.getElementById('log-filter-location').value;
-            const dateFilter = document.getElementById('log-filter-date').value;
+    const staffFilter = document.getElementById('log-filter-staff').value.toLowerCase();
+    const locationFilter = document.getElementById('log-filter-location').value;
+    const startDateFilter = document.getElementById('log-filter-start-date').value;
+    const endDateFilter = document.getElementById('log-filter-end-date').value;
 
-            const filtered = transactions.filter(t => {
-                const staffMatch = staffFilter ? (t.staffName || '').toLowerCase().includes(staffFilter) : true;
-                const locationMatch = locationFilter ? t.location === locationFilter : true;
-                
-                let dateMatch = true;
-                if (dateFilter && t.timestamp) {
-                    const transactionDate = new Date(t.timestamp.seconds * 1000).toISOString().split('T')[0];
-                    dateMatch = transactionDate === dateFilter;
-                }
+    const filtered = transactions.filter(t => {
+        const staffMatch = staffFilter ? (t.staffName || '').toLowerCase().includes(staffFilter) : true;
+        const locationMatch = locationFilter ? t.location === locationFilter : true;
+        let dateMatch = true;
 
-                return staffMatch && locationMatch && dateMatch;
-            });
+        if ((startDateFilter || endDateFilter) && t.timestamp) {
+            const transactionDate = new Date(t.timestamp.seconds * 1000);
+            const startDate = startDateFilter ? new Date(startDateFilter) : new Date(0);
+            const endDate = endDateFilter ? new Date(endDateFilter) : new Date();
+            dateMatch = transactionDate >= startDate && transactionDate <= new Date(endDate.getTime() + 86400000 - 1);
+        }
+        return staffMatch && locationMatch && dateMatch;
+    });
 
-            renderTransactionLog(filtered);
+    renderTransactionLog(filtered);
+};
         };
-        
-        /** Exports the currently visible transaction log to CSV */
         window.exportLog = () => {
             const logData = transactions.map(t => ({
                 'Date/Time': t.timestamp ? new Date(t.timestamp.seconds * 1000).toLocaleString() : 'N/A',
@@ -1051,12 +877,9 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 'Quantity': t.quantity,
                 'Staff Name': t.staffName || 'Admin',
             }));
-            
             const csv = toCSV(logData);
             downloadFile(`Mitchell_Murdoch_Stock_Log_${new Date().toISOString().split('T')[0]}.csv`, csv, 'text/csv');
         };
-
-        /** Populates Location filters in the Admin Log tab */
         const renderAdminLocationFilters = () => {
             const select = document.getElementById('log-filter-location');
             const currentValue = select.value;
@@ -1069,20 +892,13 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 select.appendChild(option);
             });
         };
-
-        // --- Admin: Low Stock Report ---
-
-        /** Renders the Low Stock Report (now uses global lowStockComments state) */
         const renderLowStockReport = () => {
             const container = document.getElementById('low-stock-report');
-            
             if (stockLevels.length === 0 || items.length === 0 || locations.length === 0) {
                 container.innerHTML = '<p class="text-gray-500 italic">Stock or item definitions are empty.</p>';
                 return;
             }
-            
-            // Use the global, real-time updated state
-            const currentLowStockComments = lowStockComments; 
+            const currentLowStockComments = lowStockComments;
 
             let reportHTML = '';
             let lowStockFound = false;
@@ -1099,22 +915,19 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                     if (quantity <= threshold) {
                         lowStockFound = true;
                         lowItemsInLoc = true;
-                        
                         const commentId = `${loc.id}_${item.id}`;
                         const commentData = currentLowStockComments[commentId];
                         const comment = commentData?.comment || 'No comment yet.';
                         const lastUpdate = commentData?.lastUpdate ? new Date(commentData.lastUpdate.seconds * 1000).toLocaleString() : 'Never';
-                        
                         const statusClass = quantity === 0 ? 'bg-red-50 p-4 rounded-lg border border-red-300' : 'bg-yellow-50 p-4 rounded-lg border border-yellow-300';
-                        const statusText = quantity === 0 ? 
-                            `<span class="text-red-600 font-extrabold">(OUT OF STOCK)</span>` : 
+                        const statusText = quantity === 0 ?
+                            `<span class="text-red-600 font-extrabold">(OUT OF STOCK)</span>` :
                             '';
 
                         locationReportHTML += `
                             <div class="${statusClass}">
                                 <p class="font-bold text-gray-800">${item.name} ${statusText}</p>
                                 <p class="text-sm text-yellow-800">Current: ${quantity} / Threshold: ${threshold}</p>
-                                
                                 <div class="mt-2 text-sm text-gray-600">
                                     <p><strong>Order Status:</strong> ${comment}</p>
                                     <p class="text-xs italic">Last Updated: ${lastUpdate}</p>
@@ -1126,8 +939,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                                 </div>
                             </div>
                         `;
-                    }
-                }
+}
 
                 if (lowItemsInLoc) {
                     reportHTML += `
@@ -1138,17 +950,13 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                             </div>
                         </div>
                     `;
-                }
-            }
+}
 
             if (!lowStockFound) {
                 container.innerHTML = '<p class="text-green-600 font-semibold mt-4">All stock levels are currently above minimum thresholds at all sites. Good job!</p>';
             } else {
                 container.innerHTML = reportHTML;
-            }
-        };
-
-        /** Saves a comment on a low stock item for a specific location (Public Data) - Correct 5-segment path */
+};
         window.saveLowStockComment = async (locationId, itemId) => {
             const commentId = `${locationId}_${itemId}`;
             const commentInput = document.getElementById(`comment-input-${commentId}`);
@@ -1160,7 +968,6 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             }
 
             const commentsRef = doc(db, `/artifacts/${appId}/public/data/low_stock_comments`, commentId);
-            
             try {
                 await setDoc(commentsRef, {
                     locationId,
@@ -1168,46 +975,35 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                     comment: commentText,
                     lastUpdate: Timestamp.now()
                 });
-                commentInput.value = ''; // Clear input on success
+                commentInput.value = '';
                 showMessageModal("Success", "Low stock comment saved successfully.");
-                // renderLowStockReport will automatically refresh due to onSnapshot
             } catch (error) {
                 console.error("Error saving comment:", error);
                 showMessageModal("Error", "Failed to save comment. See console for details.");
-            }
-        };
-
-        // --- Admin: Stock Check/Count ---
-        
-        /** Renders location buttons for Stock Check area */
+};
         const renderStockCheckLocations = () => {
              const container = document.getElementById('stock-check-location-buttons');
             container.innerHTML = locations.map(loc => `
-                <button 
+                <button
                     onclick="selectStockCheckLocation('${loc.id}')"
-                    class="py-2 px-4 rounded-lg font-medium transition duration-150 
+                    class="py-2 px-4 rounded-lg font-medium transition duration-150
                     ${stockCheckLocationId === loc.id ? 'bg-primary-purple text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-primary-purple/20'}"
                     data-location-id="${loc.id}">
                     ${loc.name}
                 </button>
             `).join('');
-            
             if (stockCheckLocationId) {
                 renderStockCheckForm(stockCheckLocationId);
-            }
-        }
+}
 
         window.selectStockCheckLocation = (locationId) => {
             stockCheckLocationId = locationId;
-            renderStockCheckLocations(); // Re-render buttons to show selection
+            renderStockCheckLocations();
             renderStockCheckForm(locationId);
         };
-
-        /** Renders the form for counting and adjusting stock */
         const renderStockCheckForm = (locationId) => {
             const container = document.getElementById('stock-check-form-area');
             const locName = locations.find(l => l.id === locationId)?.name;
-            
             if (!locName || items.length === 0) {
                 container.innerHTML = `<p class="text-gray-500 italic">No items or location selected.</p>`;
                 return;
@@ -1216,19 +1012,17 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             const currentStockData = stockLevels
                 .filter(sl => sl.locationId === locationId)
                 .reduce((acc, sl) => ({ ...acc, [sl.itemId]: sl.quantity }), {});
-            
             const formHTML = `
                 <h4 class="text-xl font-semibold mb-4 text-primary-purple">Current Count for ${locName}</h4>
                 <p class="text-sm text-gray-600 mb-6">Enter the total physical count for each item below. This will **overwrite** the current stock level.</p>
-                
                 <div class="space-y-4">
                     ${items.map(item => {
                         const currentQty = currentStockData[item.id] || 0;
                         return `
                             <div class="flex items-center gap-4 bg-gray-50 p-3 rounded-lg border">
                                 <label for="count-item-${item.id}" class="w-1/2 font-medium text-gray-700">${item.name} (Current: ${currentQty})</label>
-                                <input type="number" id="count-item-${item.id}" 
-                                    placeholder="Enter actual count" 
+                                <input type="number" id="count-item-${item.id}"
+                                    placeholder="Enter actual count"
                                     value="${currentQty}"
                                     class="w-1/2 p-2 border rounded-lg focus:ring-secondary-teal focus:border-secondary-teal"
                                     data-item-id="${item.id}"
@@ -1243,21 +1037,16 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             `;
             container.innerHTML = formHTML;
         };
-
-        /** Executes the Stock Check Adjustment */
         window.performStockCheckAdjustment = async (locationId, locName) => {
             const updates = [];
             let hasChanges = false;
-            
             items.forEach(item => {
                 const input = document.getElementById(`count-item-${item.id}`);
                 const newCount = parseInt(input.value, 10);
-                
                 if (isNaN(newCount) || newCount < 0) return;
 
                 const stock = stockLevels.find(sl => sl.locationId === locationId && sl.itemId === item.id);
                 const currentQuantity = stock?.quantity || 0;
-                
                 if (newCount !== currentQuantity) {
                     updates.push({
                         itemId: item.id,
@@ -1267,8 +1056,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                         change: newCount - currentQuantity
                     });
                     hasChanges = true;
-                }
-            });
+});
 
             if (!hasChanges) {
                 showMessageModal("No Changes", "The entered counts match the current recorded stock. No update necessary.");
@@ -1279,20 +1067,14 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
 
             try {
                 const batch = writeBatch(db);
-                
                 for (const update of updates) {
-                    // Correct 5-segment path
                     const stockDocId = `${locationId}_${update.itemId}`;
                     const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
-                    
-                    // Update Stock Level (Public Collection) - using set with merge to ensure it exists
-                    batch.set(stockRef, { 
-                        locationId, 
-                        itemId: update.itemId, 
-                        quantity: update.newQuantity 
+                    batch.set(stockRef, {
+                        locationId,
+                        itemId: update.itemId,
+                        quantity: update.newQuantity
                     }, { merge: true });
-
-                    // Record Transaction (Private Collection)
                     const transactionRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
                     batch.set(transactionRef, {
                         type: 'check',
@@ -1312,12 +1094,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 console.error("Stock Check Adjustment failed:", error);
                 closeMessageModal();
                 showMessageModal("Error", "Failed to update stock levels. See console for details.");
-            }
-        };
-
-        // --- Admin: Mass Stock Update ---
-
-        /** Populates Location and Item selects in the Mass Update tab */
+};
         const renderAdminLocationSelects = () => {
             const selectLoc = document.getElementById('mass-update-location');
             const currentValueLoc = selectLoc.value;
@@ -1343,8 +1120,6 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 selectItem.appendChild(option);
             });
         };
-        
-        /** Executes the Mass Stock Update */
         window.performMassUpdate = async () => {
             const locationId = document.getElementById('mass-update-location').value;
             const itemId = document.getElementById('mass-update-item').value;
@@ -1354,7 +1129,6 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 showMessageModal("Input Error", "Please select an item and enter a valid non-zero quantity.");
                 return;
             }
-            
             const item = items.find(i => i.id === itemId);
             const targetLocations = locationId === 'ALL' ? locations : locations.filter(l => l.id === locationId);
             const locNameDisplay = locationId === 'ALL' ? 'All Sites' : targetLocations[0]?.name;
@@ -1370,29 +1144,21 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 const batch = writeBatch(db);
 
                 for (const loc of targetLocations) {
-                    // Correct 5-segment path
                     const stockDocId = `${loc.id}_${itemId}`;
                     const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
-                    
-                    // We need the current value for logging, but since we cannot read in a batch, we rely on the latest onSnapshot data:
                     const currentStock = stockLevels.find(sl => sl.locationId === loc.id && sl.itemId === itemId)?.quantity || 0;
                     const newQuantity = currentStock + quantity;
-                    
                     if (newQuantity < 0) {
                         throw new Error(`Negative stock resulting from update at ${loc.name}. Please adjust quantity. Current: ${currentStock}, Change: ${quantity}`);
                     }
-
-                    // 1. Update Stock Level (Public Collection)
-                    batch.set(stockRef, { 
-                        locationId: loc.id, 
-                        itemId, 
+                    batch.set(stockRef, {
+                        locationId: loc.id,
+                        itemId,
                         quantity: newQuantity
                     }, { merge: true });
-
-                    // 2. Record Transaction (Private Collection)
                     const transactionRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
                     batch.set(transactionRef, {
-                        type: 'addition', // Treat mass update as addition/subtraction by admin
+                        type: 'addition',
                         staffName: 'Admin (Mass Update)',
                         location: loc.name,
                         itemId,
@@ -1401,9 +1167,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                         timestamp: Timestamp.now()
                     });
                 }
-                
                 await batch.commit();
-                
                 closeMessageModal();
                 showMessageModal("Success!", `Mass update successful. ${quantity} units of ${item.name} added/removed across ${targetLocations.length} sites.`);
 
@@ -1411,12 +1175,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 console.error("Mass update failed:", error);
                 closeMessageModal();
                 showMessageModal("Mass Update Failed", error.message || "An unexpected error occurred during the mass update.");
-            }
-        };
-
-        // --- Admin: Settings (CRUD) ---
-
-        /** Renders the lists for locations and items in the Settings tab */
+};
         const renderAdminSettings = () => {
             const itemList = document.getElementById('item-list');
             itemList.innerHTML = items.map(item => `
@@ -1438,8 +1197,6 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 </div>
             `).join('');
         };
-
-        /** Adds a new stock item (Private Data) */
         window.addItem = async () => {
             const name = document.getElementById('new-item-name').value.trim();
             const threshold = parseInt(document.getElementById('new-item-threshold').value, 10) || 0;
@@ -1461,14 +1218,10 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             } catch (error) {
                 console.error("Error adding item:", error);
                 showMessageModal("Error", "Failed to add item.");
-            }
-        };
-
-        /** Updates the minimum stock threshold for an item (Private Data) */
+};
         window.updateItemThreshold = async (itemId) => {
             const input = document.getElementById(`threshold-input-${itemId}`);
             const newThreshold = parseInt(input.value, 10);
-            
             if (isNaN(newThreshold) || newThreshold < 0) {
                 showMessageModal("Input Error", "Please enter a valid non-negative number for the threshold.");
                 return;
@@ -1482,12 +1235,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             } catch (error) {
                 console.error("Error updating threshold:", error);
                 showMessageModal("Error", "Failed to update threshold.");
-            }
-        };
-
-        /** Removes a stock item (Private Data) */
+};
         window.removeItem = async (itemId, itemName) => {
-            // Using a simple modal as a prompt for confirmation since window.confirm is forbidden
             const confirmRemoval = async () => {
                 try {
                     await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/items`, itemId));
@@ -1497,12 +1246,10 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                     console.error("Error removing item:", error);
                     closeMessageModal();
                     showMessageModal("Error", "Failed to remove item.");
-                }
-            };
+};
 
             document.getElementById('message-title').textContent = "Confirm Item Deletion";
             document.getElementById('message-body').innerHTML = `<p class="text-gray-700">Are you sure you want to remove the stock item: <strong>${itemName}</strong>? This will not remove existing stock levels.</p>`;
-            
             const modalActions = document.getElementById('modal-actions');
             modalActions.innerHTML = `
                 <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
@@ -1510,8 +1257,6 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             `;
             document.getElementById('message-modal').classList.remove('hidden');
         };
-
-        /** Adds a new location (Private Data) */
         window.addLocation = async () => {
             const name = document.getElementById('new-location-name').value.trim();
             if (!name) {
@@ -1529,12 +1274,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             } catch (error) {
                 console.error("Error adding location:", error);
                 showMessageModal("Error", "Failed to add location.");
-            }
-        };
-
-        /** Removes a location (Private Data) */
+};
         window.removeLocation = async (locationId, locationName) => {
-            // Using a simple modal as a prompt for confirmation since window.confirm is forbidden
             const confirmRemoval = async () => {
                 try {
                     await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/locations`, locationId));
@@ -1544,9 +1285,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                     console.error("Error removing location:", error);
                     closeMessageModal();
                     showMessageModal("Error", "Failed to remove location.");
-                }
-            };
-            
+};
             document.getElementById('message-title').textContent = "Confirm Location Deletion";
             document.getElementById('message-body').innerHTML = `<p class="text-red-600 font-bold mb-2">WARNING: Removing ${locationName}?</p><p class="text-gray-700">This will not delete existing stock or transactions associated with this location.</p>`;
 
@@ -1557,10 +1296,6 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             `;
             document.getElementById('message-modal').classList.remove('hidden');
         };
-
-        // --- Initial Load ---
-        
-        // Expose functions globally for HTML event handlers
         window.openCheckoutModal = openCheckoutModal;
         window.closeCheckoutModal = closeCheckoutModal;
         window.selectLocation = selectLocation;
@@ -1586,5 +1321,34 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
 
         initializeFirebase();
     </script>
+
+<script>
+window.toggleAdminLogin = function () {
+  const modal = document.getElementById('admin-login-modal');
+  const error = document.getElementById('login-error');
+  if (!modal) return console.error('Admin modal not found');
+  if (modal.classList.contains('hidden')) {
+    modal.classList.remove('hidden');
+    const pwd = document.getElementById('admin-password');
+    if (pwd) pwd.value = '';
+    if (error) error.classList.add('hidden');
+  } else {
+    modal.classList.add('hidden');
+  }
+};
+
+window.adminLogin = function () {
+  const password = document.getElementById('admin-password').value.trim();
+  const modal = document.getElementById('admin-login-modal');
+  const error = document.getElementById('login-error');
+  if (password === 'admin123') {
+    if (modal) modal.classList.add('hidden');
+    document.body.classList.add('admin-active');
+  } else {
+    if (error) error.classList.remove('hidden');
+  }
+};
+</script>
+
 </body>
 </html>
