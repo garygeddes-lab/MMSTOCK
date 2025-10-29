@@ -150,6 +150,11 @@
         
         let firebaseConfig = null;
         const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+        
+        // --- DEBUGGING LOG ADDED HERE ---
+        console.log("DEBUG: Raw __firebase_config string:", rawConfig); 
+        // ---------------------------------
+        
         if (rawConfig) {
             try {
                 firebaseConfig = JSON.parse(rawConfig);
@@ -229,7 +234,7 @@
 
         // --- Initialization ---
         async function initializeFirebase() {
-            if (!firebaseConfig) { // This is where the error occurs if config is missing.
+            if (!firebaseConfig) { // This is the check that fails
                 authStatusEl.textContent = 'Firebase Config Missing. Cannot connect to database.';
                 displayError("Firebase configuration is missing. Cannot initialize Firestore.");
                 return;
