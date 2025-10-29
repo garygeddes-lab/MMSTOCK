@@ -111,8 +111,8 @@
         
         // Configuration fallback used if the platform variables are invalid or missing.
         const LIVE_FIREBASE_CONFIG_FALLBACK = {
-            // This is a dummy, valid configuration to ensure Firebase SDK initialization succeeds.
-            apiKey: "AIzaSy_FALLBACK_KEY_DO_NOT_USE_IN_PROD", 
+            // Using a syntactically correct, but functionally empty config to bypass API key errors
+            apiKey: "DUMMY_API_KEY_FOR_FALLBACK", 
             authDomain: "fallback-domain.firebaseapp.com",
             projectId: "mmstock-fallback",
         };
@@ -141,6 +141,7 @@
         // --- 2. FIREBASE REFERENCE HELPERS (Using the MANDATORY __app_id) ---
         let appId = ''; // Will be set in setupFirebase
 
+        // Using PUBLIC collection paths for shared data
         const getStockLevelsRef = () => collection(db, `artifacts/${appId}/public/data/stock_levels`);
         const getItemsRef = () => collection(db, `artifacts/${appId}/public/data/items`);
         const getTransactionsRef = () => collection(db, `artifacts/${appId}/public/data/stock_transactions`);
@@ -623,12 +624,12 @@
             showLoading("Initializing Firebase...");
             let firebaseConfig;
             let configSource = 'Platform Variable';
+            let isFallback = false;
 
             try {
                 // 1. Get mandatory global variables provided by the platform (with robust checks)
                 appId = typeof __app_id === 'string' && __app_id.length > 0 ? __app_id : 'default-app-id';
 
-                // Check for config string and token
                 let configString = typeof __firebase_config === 'string' && __firebase_config.length > 0 ? __firebase_config : null;
                 const initialAuthToken = typeof __initial_auth_token === 'string' && __initial_auth_token.length > 0 ? __initial_auth_token : null;
                 
@@ -636,66 +637,69 @@
                 // --- ROBUST CONFIGURATION HANDLING ---
                 if (configString) {
                     try {
-                        // Try to parse the platform config
                         firebaseConfig = JSON.parse(configString);
-                        
                         if (!firebaseConfig || !firebaseConfig.apiKey) {
                             throw new Error("Missing API Key after parse.");
                         }
-
                     } catch (e) {
-                        // Platform string exists but is invalid JSON or invalid structure -> FALLBACK
+                        isFallback = true;
                         console.warn(`[WARN] Platform config string failed validation/parse: ${e.message}. Falling back to hardcoded config.`);
                         firebaseConfig = LIVE_FIREBASE_CONFIG_FALLBACK;
                         configSource = 'Hardcoded Fallback (Parse Failed)';
                     }
                 } else {
-                    // Platform string is missing or empty -> FALLBACK
+                    isFallback = true;
                     console.warn("[WARN] Platform variable __firebase_config is missing or empty. Falling back to hardcoded config.");
                     firebaseConfig = LIVE_FIREBASE_CONFIG_FALLBACK;
                     configSource = 'Hardcoded Fallback (Variable Missing)';
                 }
                 
-                // 2. Initialize App and Services
+                // 2. Initialize App and Firestore Services
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
-                auth = getAuth(app);
                 
-                // 3. Authentication: Use custom token ONLY if using platform config, otherwise use anonymous.
+                // 3. Authentication
                 showLoading("Authenticating User...");
                 
-                let user;
-                if (configSource === 'Platform Variable' && initialAuthToken) {
-                    const credentials = await signInWithCustomToken(auth, initialAuthToken);
-                    user = credentials.user;
-                } else {
-                    // Always sign in anonymously if using fallback config or token is missing
-                    const credentials = await signInAnonymously(auth);
-                    user = credentials.user;
-                }
+                if (isFallback) {
+                    // CRITICAL FIX: Skip Firebase Auth initialization to avoid API key validation errors.
+                    // Generate a random, unauthenticated ID for Firestore path compliance.
+                    userId = `unauthenticated_${crypto.randomUUID()}`;
+                    isAuthReady = true; 
+                    console.warn("[WARN] Running in UN-AUTHENTICATED mode. User ID is locally generated.");
 
-                // 4. Update state and start data stream
-                if (user) {
+                } else {
+                    // Use standard authentication flow if the platform configuration was successfully loaded
+                    auth = getAuth(app);
+                    let user;
+                    if (initialAuthToken) {
+                        const credentials = await signInWithCustomToken(auth, initialAuthToken);
+                        user = credentials.user;
+                    } else {
+                        const credentials = await signInAnonymously(auth);
+                        user = credentials.user;
+                    }
+                    if (!user) throw new Error('Authentication Failed: Could not get user credential.');
                     userId = user.uid; 
                     isAuthReady = true;
-                    userIdDisplay.querySelector('span').textContent = userId;
-                    userIdDisplay.classList.remove('hidden');
-
-                    showLoading("Seeding default data...");
-                    await seedInitialData();
-
-                    showLoading("Setting up real-time listeners...");
-                    setupItemsListener();
-                    setupStockLevelsListener();
-                    
-                    showConnected(configSource); // Show the successful config source
-
-                    // Initial UI Render
-                    renderSiteSelect();
-
-                } else {
-                    throw new Error('Authentication Failed: Could not get user credential.');
                 }
+                
+                // 4. Update state and start data stream
+                userIdDisplay.querySelector('span').textContent = userId;
+                userIdDisplay.classList.remove('hidden');
+
+                showLoading("Seeding default data...");
+                await seedInitialData();
+
+                showLoading("Setting up real-time listeners...");
+                setupItemsListener();
+                setupStockLevelsListener();
+                
+                showConnected(configSource);
+
+                // Initial UI Render
+                renderSiteSelect();
+
 
             } catch (error) {
                 // If any part of the setup fails, show a prominent error message
