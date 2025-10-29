@@ -374,7 +374,7 @@
             }
 
             try {
-                // setLogLevel('debug'); // Enable for detailed logs
+                setLogLevel('debug'); // <-- UNCOMMENTED: Enable for detailed logs
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
