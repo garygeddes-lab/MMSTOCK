@@ -374,7 +374,7 @@
             }
 
             try {
-                setLogLevel('debug'); // <-- UNCOMMENTED: Enable for detailed logs
+                setLogLevel('debug'); // Enable for detailed logs
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -436,8 +436,8 @@
                 console.log("Items updated:", items);
             }, (error) => console.error("Error fetching items:", error));
 
-            // 3. Stock Levels Listener (Public Data)
-            const stockLevelsColRef = collection(db, `/artifacts/${appId}/public/data/stock_control/stock_levels`);
+            // 3. Stock Levels Listener (Public Data) - FIXED PATH
+            const stockLevelsColRef = collection(db, `/artifacts/${appId}/public/data/stock_levels`);
             onSnapshot(stockLevelsColRef, (snapshot) => {
                 stockLevels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderStockDisplay();
@@ -549,7 +549,7 @@
             const cartList = document.getElementById('checkout-cart-list');
             const cartSummary = document.getElementById('current-cart');
             const checkoutButton = document.getElementById('checkout-button');
-            const currentLoc = locations.find(loc => loc.id === selectedLocationId);
+            const currentLoc = locations.find(l => l.id === selectedLocationId);
 
             if (cartItems.length === 0) {
                 cartSummary.innerHTML = '<p class="text-gray-500 italic">No items selected for removal.</p>';
@@ -613,9 +613,9 @@
                     for (const [itemId, quantityRemoved] of itemsToUpdate) {
                         const itemName = items.find(i => i.id === itemId)?.name;
                         
-                        // 1. Update Stock Level (Public Collection)
+                        // 1. Update Stock Level (Public Collection) - FIXED PATH
                         const stockDocId = `${locationId}_${itemId}`;
-                        const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_control/stock_levels`, stockDocId);
+                        const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
                         
                         const stockSnap = await t.get(stockRef);
                         const currentQuantity = stockSnap.exists() ? stockSnap.data().quantity : 0;
@@ -836,8 +836,8 @@
                 return;
             }
 
-            // Fetch current low stock comments (Public Data)
-            const commentsRef = collection(db, `/artifacts/${appId}/public/data/stock_control/low_stock_comments`);
+            // Fetch current low stock comments (Public Data) - FIXED PATH
+            const commentsRef = collection(db, `/artifacts/${appId}/public/data/low_stock_comments`);
             const commentsSnap = await getDocs(commentsRef);
             const lowStockComments = {};
             commentsSnap.forEach(doc => lowStockComments[doc.id] = doc.data());
@@ -925,7 +925,7 @@
             }
         };
 
-        /** Saves a comment on a low stock item for a specific location (Public Data) */
+        /** Saves a comment on a low stock item for a specific location (Public Data) - FIXED PATH */
         window.saveLowStockComment = async (locationId, itemId) => {
             const commentId = `${locationId}_${itemId}`;
             const commentInput = document.getElementById(`comment-input-${commentId}`);
@@ -936,7 +936,7 @@
                 return;
             }
 
-            const commentsRef = doc(db, `/artifacts/${appId}/public/data/stock_control/low_stock_comments`, commentId);
+            const commentsRef = doc(db, `/artifacts/${appId}/public/data/low_stock_comments`, commentId);
             
             try {
                 await setDoc(commentsRef, {
@@ -1058,8 +1058,9 @@
                 const batch = writeBatch(db);
                 
                 for (const update of updates) {
+                    // FIXED PATH
                     const stockDocId = `${locationId}_${update.itemId}`;
-                    const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_control/stock_levels`, stockDocId);
+                    const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
                     
                     // Update Stock Level (Public Collection) - using set with merge to ensure it exists
                     batch.set(stockRef, { 
@@ -1146,8 +1147,9 @@
                 const batch = writeBatch(db);
 
                 for (const loc of targetLocations) {
+                    // FIXED PATH
                     const stockDocId = `${loc.id}_${itemId}`;
-                    const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_control/stock_levels`, stockDocId);
+                    const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
                     
                     // We need the current value for logging, but since we cannot read in a batch, we rely on the latest onSnapshot data:
                     const currentStock = stockLevels.find(sl => sl.locationId === loc.id && sl.itemId === itemId)?.quantity || 0;
@@ -1368,8 +1370,8 @@
 
             await batch.commit();
 
-            // 3. Stock Levels (Public)
-            const stockLevelsRef = collection(db, `/artifacts/${appId}/public/data/stock_control/stock_levels`);
+            // 3. Stock Levels (Public) - FIXED PATH
+            const stockLevelsRef = collection(db, `/artifacts/${appId}/public/data/stock_levels`);
             locData.forEach(loc => {
                 itemData.forEach(item => {
                     const docId = `${loc.id}_${item.id}`;
