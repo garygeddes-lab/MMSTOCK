@@ -3,1090 +3,664 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitchell & Murdoch Stock Control</title>
+    <title>Stock Manager</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Use Inter font family -->
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; }
+        .card { @apply bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg transition-all duration-300; }
+        .btn-primary { @apply bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150; }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white min-h-screen p-4 sm:p-8">
 
-    <div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 transition-opacity duration-300">
-        <div class="flex flex-col items-center">
-            <svg class="animate-spin -ml-1 mr-3 h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p class="mt-4 text-white text-lg font-medium">Loading Stock Data and Connecting to Database...</p>
+    <div id="app" class="max-w-6xl mx-auto space-y-6">
+        <h1 class="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400 text-center">
+            Site Stock Management
+        </h1>
+
+        <!-- Loading State / Status Card -->
+        <div id="status-card" class="card text-center bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+            <div id="loader" class="flex justify-center items-center space-x-3">
+                <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-indigo-500"></div>
+                <p id="status-message" class="text-lg font-medium text-gray-600 dark:text-gray-300">
+                    Loading Stock Data and Connecting to Database...
+                </p>
+            </div>
+            <p id="user-id-display" class="mt-2 text-sm text-gray-500 dark:text-gray-400 hidden">
+                User ID: <span class="font-mono text-xs"></span>
+            </p>
+        </div>
+
+        <!-- Main Application Interface (Hidden until connected) -->
+        <div id="main-content" class="hidden space-y-6">
+            
+            <!-- Site Selector and Login -->
+            <div class="card flex flex-col md:flex-row items-center justify-between">
+                <div class="flex items-center space-x-4 mb-4 md:mb-0 w-full md:w-auto">
+                    <label for="site-select" class="font-semibold text-lg">Current Site:</label>
+                    <select id="site-select" class="p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"></select>
+                    <button id="admin-toggle" class="bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-2 px-4 rounded-lg transition duration-150">
+                        Admin Mode: <span id="admin-status">Off</span>
+                    </button>
+                </div>
+                <div id="admin-login-area" class="hidden mt-4 md:mt-0 w-full md:w-auto">
+                    <input type="password" id="admin-password" placeholder="Admin Password" class="p-2 border rounded-lg w-full md:w-48 bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600">
+                </div>
+            </div>
+
+            <!-- Stock Levels Table -->
+            <div class="card overflow-x-auto">
+                <h2 class="text-2xl font-bold mb-4 border-b pb-2 border-indigo-200 dark:border-indigo-800">Stock Overview (<span id="current-site-name">...</span>)</h2>
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead>
+                        <tr class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th class="px-6 py-3">Item Name</th>
+                            <th class="px-6 py-3 text-right">Stock Level</th>
+                            <th class="px-6 py-3 text-right">Threshold</th>
+                            <th id="cart-header" class="px-6 py-3 text-center hidden">Remove Quantity</th>
+                            <th id="action-header" class="px-6 py-3 text-center hidden">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stock-table-body" class="divide-y divide-gray-200 dark:divide-gray-700">
+                        <!-- Stock rows will be dynamically inserted here -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Transaction Area (Visible only when items are in cart) -->
+            <div id="transaction-area" class="card hidden">
+                <h2 class="text-2xl font-bold mb-4 text-red-600 dark:text-red-400 border-b pb-2 border-red-200 dark:border-red-800">Pending Removal</h2>
+                <div id="cart-summary" class="mb-4"></div>
+                <button id="confirm-removal-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150 mr-4">
+                    Confirm Removal of <span id="cart-count">0</span> Items
+                </button>
+                <button id="clear-cart-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150">
+                    Clear Cart
+                </button>
+            </div>
+
+             <!-- Admin Panel (Items Management) - Hidden by default -->
+            <div id="admin-panel" class="card hidden">
+                <h2 class="text-2xl font-bold mb-4 border-b pb-2 border-emerald-200 dark:border-emerald-800">Admin: Item Definitions</h2>
+                <p class="text-sm text-red-400 mb-4">Warning: Editing item definitions globally affects all sites.</p>
+                <div id="admin-items-list" class="space-y-4">
+                    <!-- Item definition editing forms will go here -->
+                </div>
+                <button id="add-new-item-btn" class="mt-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150">
+                    Add New Item
+                </button>
+            </div>
+
         </div>
     </div>
 
-    <div id="app" class="max-w-7xl mx-auto p-4 md:p-8" style="display: none;">
-        <header class="mb-6 pb-4 border-b border-gray-200 flex justify-between items-center">
-            <h1 class="text-3xl font-extrabold text-gray-900">Mitchell & Murdoch Stock Control</h1>
-            <div class="flex items-center space-x-4">
-                <button id="admin-login-btn" class="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow-md hover:bg-indigo-700 transition duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500">Admin Login</button>
-            </div>
-        </header>
-
-        <!-- Site Selection for Staff View -->
-        <section id="site-selection" class="mb-6 bg-white p-4 rounded-xl shadow-lg">
-            <h2 class="text-xl font-semibold text-gray-700 mb-3">Operating Site: <span id="current-site-display" class="font-bold text-indigo-600">Please Select</span></h2>
-            <div class="flex flex-wrap gap-3">
-                <!-- Buttons will be dynamically added here -->
-            </div>
-        </section>
-
-        <!-- Main Stock Display / Staff View -->
-        <section id="staff-view" class="mb-8">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Current Stock Levels</h2>
-            <div id="stock-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <!-- Stock item cards will be inserted here -->
-            </div>
-        </section>
-
-        <!-- Admin Dashboard Section (Hidden by Default) -->
-        <section id="admin-dashboard" class="hidden">
-            <div class="bg-white p-6 rounded-xl shadow-lg">
-                <h2 class="text-2xl font-bold text-indigo-600 mb-6 border-b pb-3">Admin Dashboard</h2>
-                
-                <!-- Admin Tab Navigation -->
-                <div class="flex border-b mb-6">
-                    <button data-tab="low-stock" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Low Stock Review</button>
-                    <button data-tab="mass-update" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Mass Stock Update</button>
-                    <button data-tab="single-update" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Single Item Update</button>
-                    <button data-tab="item-management" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Item Management</button>
-                    <button data-tab="transactions" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Transaction Log</button>
-                </div>
-
-                <!-- Admin Tab Content Area -->
-                <div id="admin-tab-content">
-                    <!-- Low Stock Review Tab -->
-                    <div data-tab-content="low-stock" class="admin-content-tab hidden">
-                        <h3 class="text-xl font-semibold mb-4 text-red-600">🚨 Low Stock Alerts</h3>
-                        <p class="mb-4 text-gray-600">The items below are currently at or below their pre-defined threshold across all sites.</p>
-                        <div id="low-stock-list" class="space-y-3">
-                            <!-- Low stock items will be loaded here -->
-                            <p class="text-gray-500">Loading low stock data...</p>
-                        </div>
-                    </div>
-
-                    <!-- Mass Stock Update Tab -->
-                    <div data-tab-content="mass-update" class="admin-content-tab hidden">
-                        <h3 class="text-xl font-semibold mb-4">Mass Stock Update (Global or Site-Specific)</h3>
-                        <p class="mb-6 text-gray-600">Apply a single stock addition (+) or reduction (-) across all sites, or select a specific site.</p>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
-                            <div>
-                                <label for="mass-update-site-select" class="block text-sm font-medium text-gray-700">Select Target Site</label>
-                                <select id="mass-update-site-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
-                                    <!-- Options populated by JavaScript -->
-                                </select>
-                            </div>
-                            <div>
-                                <label for="mass-update-item-select" class="block text-sm font-medium text-gray-700">Select Item</label>
-                                <select id="mass-update-item-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
-                                    <!-- Options populated by JavaScript -->
-                                </select>
-                            </div>
-                        </div>
-                        <div class="mt-6 flex items-end space-x-3">
-                            <div class="flex-grow">
-                                <label for="mass-update-quantity" class="block text-sm font-medium text-gray-700">Quantity Change (+/-)</label>
-                                <input type="number" id="mass-update-quantity" placeholder="e.g. 50 (to add) or -10 (to remove)" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5">
-                            </div>
-                            <button id="confirm-mass-update-btn" class="px-6 py-2.5 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-150">Apply Mass Update</button>
-                        </div>
-                        <p id="mass-update-message" class="mt-4 text-sm font-medium hidden"></p>
-                    </div>
-
-                    <!-- Single Item Update Tab -->
-                    <div data-tab-content="single-update" class="admin-content-tab hidden">
-                        <h3 class="text-xl font-semibold mb-4">Single Item Update (Site-Specific)</h3>
-                        <p class="mb-6 text-gray-600">Manually set a new exact stock level for an item at one specific location. (e.g., set Gloves-M in Perth to 200).</p>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg">
-                            <div>
-                                <label for="single-update-site-select" class="block text-sm font-medium text-gray-700">Select Site</label>
-                                <select id="single-update-site-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
-                                    <!-- Options populated by JavaScript -->
-                                </select>
-                            </div>
-                            <div>
-                                <label for="single-update-item-select" class="block text-sm font-medium text-gray-700">Select Item</label>
-                                <select id="single-update-item-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
-                                    <!-- Options populated by JavaScript -->
-                                </select>
-                            </div>
-                            <div>
-                                <label for="single-update-new-stock" class="block text-sm font-medium text-gray-700">New Exact Stock Level</label>
-                                <input type="number" id="single-update-new-stock" placeholder="e.g. 200" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5">
-                            </div>
-                        </div>
-                        <div class="mt-6">
-                            <button id="confirm-single-update-btn" class="px-6 py-2.5 bg-yellow-600 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-700 transition duration-150">Set New Stock Level</button>
-                        </div>
-                        <p id="single-update-message" class="mt-4 text-sm font-medium hidden"></p>
-                    </div>
-
-                    <!-- Item Management Tab -->
-                    <div data-tab-content="item-management" class="admin-content-tab hidden">
-                        <h3 class="text-xl font-semibold mb-4">Product Management</h3>
-                        <p class="mb-6 text-gray-600">Add new product types or permanently remove existing ones from the system.</p>
-                        
-                        <!-- Add New Item Form -->
-                        <div class="bg-indigo-50 p-4 rounded-lg mb-6">
-                            <h4 class="font-bold text-lg mb-3 text-indigo-700">➕ Add New Item Type</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <input type="text" id="new-item-name" placeholder="New Item Name (e.g., Nitrile Gloves)" class="col-span-1 md:col-span-2 rounded-md border-gray-300 shadow-sm p-2.5" maxlength="50">
-                                <input type="number" id="new-item-threshold" placeholder="Low Stock Threshold (e.g., 25)" class="rounded-md border-gray-300 shadow-sm p-2.5" min="0">
-                            </div>
-                            <button id="add-new-item-btn" class="mt-4 px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-150">Create New Item</button>
-                            <p id="add-item-message" class="mt-2 text-sm font-medium hidden"></p>
-                        </div>
-
-                        <!-- Delete Item List -->
-                        <div class="bg-red-50 p-4 rounded-lg">
-                            <h4 class="font-bold text-lg mb-3 text-red-700">🗑️ Delete Existing Item</h4>
-                            <p class="text-sm text-red-600 mb-4">Deleting an item removes all stock levels and transaction history for it. This action cannot be undone.</p>
-                            <select id="delete-item-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm rounded-md shadow-sm">
-                                <!-- Options populated by JavaScript -->
-                            </select>
-                            <button id="delete-item-btn" class="mt-4 px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition duration-150">Permanently Delete Item</button>
-                            <p id="delete-item-message" class="mt-2 text-sm font-medium hidden"></p>
-                        </div>
-                    </div>
-
-                    <!-- Transaction Log Tab -->
-                    <div data-tab-content="transactions" class="admin-content-tab hidden">
-                        <h3 class="text-xl font-semibold mb-4">Transaction History</h3>
-                        <p class="mb-4 text-gray-600">Full log of all stock changes across all sites.</p>
-                        <div id="transaction-log" class="overflow-x-auto bg-white rounded-lg shadow-md">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Change</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="transactions-body" class="bg-white divide-y divide-gray-200">
-                                    <!-- Transactions loaded here -->
-                                </tbody>
-                            </table>
-                            <p id="no-transactions-message" class="p-6 text-gray-500 text-center hidden">No transactions recorded yet.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-    </div>
-
-    <!-- Floating Cart Button -->
-    <button id="cart-button" class="fixed bottom-6 right-6 p-4 bg-indigo-600 text-white font-bold rounded-full shadow-2xl hover:bg-indigo-700 transition duration-150 transform hover:scale-105 hidden" style="min-width: 150px;">
-        Remove Items (0)
-    </button>
-
-    <!-- Modal for Cart Confirmation / Admin Login / Generic Message -->
-    <div id="modal-backdrop" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center z-40">
-        <div id="main-modal" class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md transform scale-100 transition-all duration-300">
-            <!-- Modal Content will be inserted here by JS -->
-        </div>
-    </div>
-
-    <!-- JavaScript Section -->
+    <!-- Firebase SDK Imports -->
     <script type="module">
-        // --- FIREBASE IMPORTS ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, runTransaction, getDocs, limit, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, writeBatch, Timestamp, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Enable Firebase debug logging
+        setLogLevel('debug');
 
 
-        // --- 1. FIREBASE CONFIGURATION (LIVE DEPLOYMENT READY) ---
-        // Configuration confirmed by user and sourced from Firebase Console.
-        const LIVE_FIREBASE_CONFIG = {
+        // --- 1. USER'S APP CONFIGURATION & GLOBAL STATE ---
+        // We do NOT use this for initialization, but we keep it for reference and app logic.
+        const LIVE_FIREBASE_CONFIG_REFERENCE = {
             apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
             authDomain: "mmstock-8bcdf.firebaseapp.com",
             projectId: "mmstock-8bcdf",
-            storageBucket: "mmstock-8bcdf.firebasestorage.app",
-            messagingSenderId: "935228101629",
-            appId: "1:935228101629:web:766421e0da43becc323f94",
-            measurementId: "G-NWJ4Z7ZHT8"
         };
         
-        // We use the Firebase Project ID as the App ID for our public data paths (Security Rules)
-        const appId = LIVE_FIREBASE_CONFIG.projectId; 
-        
-        // --- 2. ADMIN CONFIGURATION ---
+        // --- ADMIN CONFIGURATION ---
         const ADMIN_PASSWORD = 'admin'; // Hardcoded password for quick access
         const SITE_LOCATIONS = ['Dundee', 'Perth', 'Fife', 'Aberdeen', 'Glasgow'];
         const DEFAULT_ITEMS = [
-            { name: 'Gloves-Medium', threshold: 25 },
-            { name: 'Safety Glasses', threshold: 50 },
-            { name: 'Hard Hats-White', threshold: 10 },
-            { name: 'Dust Masks-N95', threshold: 100 },
+            { id: 'item_glove_m', name: 'Gloves-Medium', threshold: 25 },
+            { id: 'item_safety_g', name: 'Safety Glasses', threshold: 50 },
+            { id: 'item_hard_hat_w', name: 'Hard Hats-White', threshold: 10 },
+            { id: 'item_mask_n95', name: 'Dust Masks-N95', threshold: 100 },
         ];
         
-        // --- 3. GLOBAL STATE & FIREBASE INSTANCES ---
+        // --- GLOBAL STATE & FIREBASE INSTANCES ---
         let app, db, auth;
         let userId = 'loading...';
         let isAuthReady = false;
         let isAdmin = false;
 
-        let currentSite = null;
+        let currentSite = SITE_LOCATIONS[0];
         let stockData = {}; // Stores all stock levels: {itemId: {Dundee: 100, Perth: 50, ...}}
-        let itemNames = {}; // Stores all item metadata: {itemId: {name: 'Gloves-M', threshold: 25}}
+        let itemNames = {}; // Stores all item metadata: {itemId: {name: 'Gloves-M', threshold: 25, docId: '...'}}
         let itemCart = {}; // Stores items being removed: {itemId: count}
 
-        // --- 4. FIREBASE REFERENCE HELPERS ---
-        const getStockLevelsRef = () => collection(db, `/artifacts/${appId}/public/data/stock_levels`);
-        const getItemsRef = () => collection(db, `/artifacts/${appId}/public/data/items`);
-        const getTransactionsRef = () => collection(db, `/artifacts/${appId}/public/data/stock_transactions`);
+        // --- 2. FIREBASE REFERENCE HELPERS (Using the MANDATORY __app_id) ---
+        let appId = ''; // Will be set in setupFirebase
 
-        // --- 5. UTILITY FUNCTIONS ---
-        const showLoading = (show) => {
-            const loadingOverlay = document.getElementById('loading-overlay');
-            loadingOverlay.style.opacity = show ? '1' : '0';
-            loadingOverlay.style.display = show ? 'flex' : 'none';
-            document.getElementById('app').style.display = show ? 'none' : 'block';
+        const getStockLevelsRef = () => collection(db, `artifacts/${appId}/public/data/stock_levels`);
+        const getItemsRef = () => collection(db, `artifacts/${appId}/public/data/items`);
+        const getTransactionsRef = () => collection(db, `artifacts/${appId}/public/data/stock_transactions`);
+
+        // --- 3. UI ELEMENT REFERENCES ---
+        const statusCard = document.getElementById('status-card');
+        const loader = document.getElementById('loader');
+        const statusMessage = document.getElementById('status-message');
+        const mainContent = document.getElementById('main-content');
+        const siteSelect = document.getElementById('site-select');
+        const currentSiteName = document.getElementById('current-site-name');
+        const stockTableBody = document.getElementById('stock-table-body');
+        const adminToggleBtn = document.getElementById('admin-toggle');
+        const adminStatusSpan = document.getElementById('admin-status');
+        const adminPasswordInput = document.getElementById('admin-password');
+        const adminLoginArea = document.getElementById('admin-login-area');
+        const adminPanel = document.getElementById('admin-panel');
+        const adminItemsList = document.getElementById('admin-items-list');
+        const transactionArea = document.getElementById('transaction-area');
+        const cartCountSpan = document.getElementById('cart-count');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // --- 4. CORE UI FUNCTIONS ---
+
+        const showLoading = (message) => {
+            statusMessage.textContent = message;
+            loader.classList.remove('hidden');
+            mainContent.classList.add('hidden');
+            statusCard.classList.remove('bg-red-200'); // Clear error state
+            statusCard.classList.remove('bg-green-200');
         };
 
-        const showModal = (contentHTML) => {
-            document.getElementById('main-modal').innerHTML = contentHTML;
-            document.getElementById('modal-backdrop').classList.remove('hidden');
-            document.getElementById('modal-backdrop').classList.add('flex');
+        const showError = (message) => {
+            statusMessage.textContent = `Error: ${message}`;
+            loader.classList.add('hidden');
+            statusCard.classList.add('bg-red-200');
         };
 
-        const hideModal = () => {
-            document.getElementById('modal-backdrop').classList.add('hidden');
-            document.getElementById('modal-backdrop').classList.remove('flex');
+        const showConnected = () => {
+            statusMessage.textContent = 'Database Connected. Loading Live Data...';
+            statusCard.classList.add('bg-green-200');
+            loader.classList.add('hidden');
+            mainContent.classList.remove('hidden');
         };
+
+        // --- 5. DATA RENDERING AND LOGIC ---
+
+        function renderSiteSelect() {
+            siteSelect.innerHTML = SITE_LOCATIONS.map(site => 
+                `<option value="${site}" ${site === currentSite ? 'selected' : ''}>${site}</option>`
+            ).join('');
+            currentSiteName.textContent = currentSite;
+        }
+
+        function renderStockTable() {
+            stockTableBody.innerHTML = '';
+            let cartActive = Object.keys(itemCart).length > 0;
+            
+            // Toggle visibility of transaction area and cart columns
+            transactionArea.classList.toggle('hidden', !cartActive);
+            document.getElementById('cart-header').classList.toggle('hidden', !cartActive);
+            document.getElementById('action-header').classList.toggle('hidden', cartActive);
+
+            const itemIds = Object.keys(itemNames).sort();
+
+            if (itemIds.length === 0) {
+                 stockTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No items defined. Check Admin Panel.</td></tr>`;
+                 return;
+            }
+
+            itemIds.forEach(itemId => {
+                const item = itemNames[itemId];
+                const siteStocks = stockData[itemId] || {};
+                const level = siteStocks[currentSite] || 0;
+                const threshold = item.threshold || 0;
+                const isLow = level <= threshold;
+                const cartQty = itemCart[itemId] || 0;
+                
+                let rowClass = isLow ? 'bg-red-50 dark:bg-red-900/50' : 'hover:bg-gray-50 dark:hover:bg-gray-700';
+
+                let rowHtml = `
+                    <tr class="${rowClass}">
+                        <td class="px-6 py-4 font-medium text-gray-900 dark:text-white">${item.name}</td>
+                        <td class="px-6 py-4 text-right ${isLow ? 'text-red-500 font-bold' : ''}">${level}</td>
+                        <td class="px-6 py-4 text-right text-gray-500">${threshold}</td>
+                `;
+
+                // Removal Cart View (if cart is active)
+                if (cartActive) {
+                    rowHtml += `
+                        <td class="px-6 py-4 text-center">
+                            ${cartQty > 0 ? `<span class="font-bold text-red-600">${cartQty}</span>` : '0'}
+                            <button onclick="decrementCart('${itemId}')" class="ml-2 text-red-500 hover:text-red-700 disabled:opacity-50" ${cartQty === 0 ? 'disabled' : ''}>-</button>
+                        </td>
+                    `;
+                } 
+                // Action/Input View (if cart is inactive)
+                else {
+                    rowHtml += `
+                        <td class="px-6 py-4 text-center">
+                            <input type="number" id="qty-${itemId}" min="1" max="${level}" placeholder="Qty" class="w-20 p-1 border rounded-lg bg-gray-50 dark:bg-gray-700 text-center" value="">
+                            <button onclick="addToCart('${itemId}')" class="ml-2 btn-primary py-1 px-2 text-sm">Remove</button>
+                            <button onclick="restock('${itemId}')" class="ml-2 bg-green-500 hover:bg-green-600 text-white py-1 px-2 rounded-lg text-sm">Restock</button>
+                        </td>
+                    `;
+                }
+
+                rowHtml += `</tr>`;
+                stockTableBody.insertAdjacentHTML('beforeend', rowHtml);
+            });
+
+            if (cartActive) {
+                renderCartSummary();
+            }
+        }
         
-        // Helper function for non-blocking alerts
-        const alertUser = (title, message, type) => {
-            const bgColor = type === 'green' ? 'bg-green-100' : (type === 'red' ? 'bg-red-100' : 'bg-yellow-100');
-            const textColor = type === 'green' ? 'text-green-700' : (type === 'red' ? 'text-red-700' : 'text-yellow-700');
-            const headerColor = type === 'green' ? 'text-green-600' : (type === 'red' ? 'text-red-600' : 'text-yellow-600');
-            const buttonColor = type === 'green' ? 'bg-green-600' : (type === 'red' ? 'bg-red-600' : 'bg-yellow-600');
+        function renderCartSummary() {
+            let totalItems = 0;
+            let cartHtml = Object.keys(itemCart).map(itemId => {
+                const qty = itemCart[itemId];
+                totalItems += qty;
+                return `<p class="text-sm">• ${itemNames[itemId]?.name}: <span class="font-bold">${qty}</span> removed.</p>`;
+            }).join('');
 
-            const modalContent = `
-                <div class="${bgColor} p-4 rounded-lg">
-                    <h3 class="text-xl font-bold ${headerColor} mb-2">${title}</h3>
-                    <p class="${textColor} mb-4">${message}</p>
-                </div>
-                <div class="flex justify-end mt-4">
-                    <button onclick="hideModal()" class="px-4 py-2 ${buttonColor} text-white font-medium rounded-lg hover:opacity-90">Dismiss</button>
-                </div>
-            `;
-            showModal(modalContent);
+            document.getElementById('cart-summary').innerHTML = cartHtml;
+            cartCountSpan.textContent = totalItems;
+        }
+
+        // --- 6. EVENT HANDLERS (GLOBAL) ---
+        
+        window.addToCart = (itemId) => {
+            const input = document.getElementById(`qty-${itemId}`);
+            const qty = parseInt(input.value, 10);
+            const currentLevel = (stockData[itemId] || {})[currentSite] || 0;
+
+            if (qty > 0 && qty <= currentLevel) {
+                itemCart[itemId] = (itemCart[itemId] || 0) + qty;
+                input.value = ''; // Clear input
+                renderStockTable();
+            } else if (qty > currentLevel) {
+                 console.warn(`Cannot remove ${qty}: only ${currentLevel} in stock.`);
+            }
         };
 
-        // --- 6. AUTHENTICATION AND INITIALIZATION ---
+        window.decrementCart = (itemId) => {
+            if (itemCart[itemId] && itemCart[itemId] > 0) {
+                itemCart[itemId] -= 1;
+                if (itemCart[itemId] === 0) {
+                    delete itemCart[itemId];
+                }
+                renderStockTable();
+            }
+        };
 
-        const initFirebase = async () => {
-            showLoading(true);
+        window.clearCart = () => {
+            itemCart = {};
+            renderStockTable();
+        };
+
+        window.restock = async (itemId) => {
+            const input = document.getElementById(`qty-${itemId}`);
+            const qty = parseInt(input.value, 10);
+
+            if (qty <= 0 || isNaN(qty)) {
+                console.warn("Invalid restock quantity.");
+                return;
+            }
+
+            const currentLevel = (stockData[itemId] || {})[currentSite] || 0;
+            const newLevel = currentLevel + qty;
+
             try {
-                // setLogLevel('debug'); // Uncomment for console debugging
+                // Update stock level for the current site
+                const stockDocRef = doc(getStockLevelsRef(), itemId);
+                await updateDoc(stockDocRef, { [currentSite]: newLevel });
                 
-                // 1. Initialize with your live config
-                app = initializeApp(LIVE_FIREBASE_CONFIG);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                
-                // 2. Sign in anonymously (Used for all staff users)
-                await signInAnonymously(auth);
-
-                // 3. Wait for auth state to stabilize
-                await new Promise(resolve => {
-                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                        if (user) {
-                            userId = user.uid;
-                        } else {
-                            // Re-sign in if necessary
-                            await signInAnonymously(auth);
-                            userId = auth.currentUser.uid;
-                        }
-                        isAuthReady = true;
-                        unsubscribe();
-                        resolve();
-                    });
+                // Record the transaction
+                await setDoc(doc(getTransactionsRef()), {
+                    itemId: itemId,
+                    site: currentSite,
+                    quantity: qty,
+                    type: 'restock',
+                    timestamp: Timestamp.now(),
+                    userId: userId,
                 });
 
-                console.log(`Firebase Initialized. User ID: ${userId}`);
-                
-                // 4. Setup listeners and check data
-                await seedInitialData();
-                setupListeners(); 
-                
-            } catch (error) {
-                console.error("Firebase Initialization Error:", error);
-                // Catch the specific config error here:
-                if (error.code === 'auth/configuration-not-found') {
-                     alertUser("Configuration Error", "Authentication failed. Please verify that Anonymous Authentication is enabled in your Firebase Console for project mmstock-8bcdf.", "red");
-                } else {
-                     alertUser("Connection Error", `Could not connect to the database. Error: ${error.message}`, "red");
-                }
-            } finally {
-                showLoading(false);
+                input.value = ''; // Clear input
+                console.log(`Restocked ${qty} of ${itemNames[itemId].name} at ${currentSite}`);
+            } catch(e) {
+                console.error("Restock failed:", e);
             }
         };
 
-        // --- 7. DATA SEEDING (Ensures initial items and sites exist) ---
+        document.getElementById('confirm-removal-btn').addEventListener('click', async () => {
+            const batch = writeBatch(db);
+            const transactionDoc = doc(getTransactionsRef());
+            const transactionEntries = [];
 
-        const seedInitialData = async () => {
-            if (!isAuthReady) return;
+            try {
+                for (const itemId in itemCart) {
+                    const removeQty = itemCart[itemId];
+                    const currentLevel = (stockData[itemId] || {})[currentSite] || 0;
+                    const newLevel = currentLevel - removeQty;
 
-            const stockRef = getStockLevelsRef();
-            const itemsRef = getItemsRef();
-            
-            // Check if items collection has any documents
-            const itemDocs = await getDocs(itemsRef);
-            if (itemDocs.empty) {
-                console.log("Seeding initial items...");
+                    if (newLevel < 0) {
+                        console.error(`Attempted over-removal for ${itemNames[itemId].name}. Aborting batch.`);
+                        throw new Error(`Over-removal attempt for ${itemNames[itemId].name}`);
+                    }
 
-                for (const item of DEFAULT_ITEMS) {
-                    const itemDocRef = doc(itemsRef, item.name); // Use name as doc ID for simplicity
-                    await setDoc(itemDocRef, { 
-                        name: item.name, 
-                        threshold: item.threshold,
-                        createdAt: new Date().toISOString()
+                    // 1. Update stock level
+                    const stockDocRef = doc(getStockLevelsRef(), itemId);
+                    batch.update(stockDocRef, { [currentSite]: newLevel });
+
+                    // 2. Record transaction entry
+                    transactionEntries.push({
+                        itemId: itemId,
+                        quantity: removeQty,
+                        type: 'removal',
                     });
                 }
 
-                // Initialize stock for all new items at all sites (set to 0)
-                // We use setDoc(merge: true) to ensure we don't overwrite other fields if they exist
-                for (const site of SITE_LOCATIONS) {
-                     const siteDocRef = doc(stockRef, site);
-                     const siteData = {};
-                     DEFAULT_ITEMS.forEach(item => {
-                         siteData[item.name] = 0;
-                     });
-                     await setDoc(siteDocRef, siteData, { merge: true });
-                }
-            } else {
-                console.log("Items collection already exists.");
+                // 3. Commit the batch updates
+                await batch.commit();
+
+                // 4. Record the overall transaction
+                await setDoc(transactionDoc, {
+                    site: currentSite,
+                    entries: transactionEntries,
+                    timestamp: Timestamp.now(),
+                    userId: userId,
+                });
+
+                window.clearCart();
+                console.log('Removal confirmed and transactions recorded.');
+
+            } catch (e) {
+                console.error("Transaction failed:", e);
+                // In a real app, you might revert local state or inform the user
             }
-        };
+        });
 
-        // --- 8. REAL-TIME LISTENERS ---
 
-        const setupListeners = () => {
-            if (!isAuthReady) return;
+        // Handle Site Change
+        siteSelect.addEventListener('change', (e) => {
+            currentSite = e.target.value;
+            currentSiteName.textContent = currentSite;
+            renderStockTable();
+        });
 
-            // 1. Listen for Item Metadata Changes
-            onSnapshot(getItemsRef(), (snapshot) => {
+        // Handle Admin Toggle
+        adminToggleBtn.addEventListener('click', () => {
+            if (isAdmin) {
+                isAdmin = false;
+                adminStatusSpan.textContent = 'Off';
+                adminPanel.classList.add('hidden');
+                adminLoginArea.classList.add('hidden');
+                adminPasswordInput.value = '';
+                console.log("Admin mode disabled.");
+            } else {
+                adminLoginArea.classList.remove('hidden');
+            }
+        });
+
+        // Handle Admin Login
+        adminPasswordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                if (adminPasswordInput.value === ADMIN_PASSWORD) {
+                    isAdmin = true;
+                    adminStatusSpan.textContent = 'On';
+                    adminPanel.classList.remove('hidden');
+                    adminLoginArea.classList.add('hidden');
+                    renderAdminItems();
+                    console.log("Admin mode enabled.");
+                } else {
+                    console.error("Incorrect Admin Password");
+                    adminPasswordInput.value = '';
+                }
+            }
+        });
+
+        // --- 7. DATA LISTENERS (REAL-TIME) ---
+
+        // Listener for Item Metadata (The names and thresholds)
+        function setupItemsListener() {
+            const itemsQuery = query(getItemsRef());
+            onSnapshot(itemsQuery, (snapshot) => {
                 itemNames = {};
                 snapshot.forEach(doc => {
-                    itemNames[doc.id] = doc.data();
+                    itemNames[doc.id] = { ...doc.data(), docId: doc.id };
                 });
-                renderAdminSelects();
-            }, (error) => console.error("Error listening to items:", error));
+                console.log("Item metadata updated:", itemNames);
+                renderStockTable();
+                if (isAdmin) renderAdminItems();
+            }, (error) => {
+                console.error("Error setting up items listener:", error);
+            });
+        }
 
-            // 2. Listen for Stock Level Changes
-            onSnapshot(getStockLevelsRef(), (snapshot) => {
+        // Listener for Stock Levels
+        function setupStockLevelsListener() {
+            const stockQuery = query(getStockLevelsRef());
+            onSnapshot(stockQuery, (snapshot) => {
                 stockData = {};
                 snapshot.forEach(doc => {
                     stockData[doc.id] = doc.data();
                 });
-                renderSiteButtons();
-                renderStockList();
-                renderLowStockReview();
-            }, (error) => console.error("Error listening to stock:", error));
-
-            // 3. Listen for Transaction Changes (Admin Log)
-            const transactionsQuery = query(getTransactionsRef(), orderBy('timestamp', 'desc'), limit(50));
-            onSnapshot(transactionsQuery, (snapshot) => {
-                renderTransactionLog(snapshot.docs.map(doc => doc.data()));
-            }, (error) => console.error("Error listening to transactions:", error));
-        };
-
-        // --- 9. RENDER FUNCTIONS ---
-
-        const renderSiteButtons = () => {
-            const container = document.querySelector('#site-selection .flex');
-            container.innerHTML = '';
-            SITE_LOCATIONS.forEach(site => {
-                const btn = document.createElement('button');
-                btn.textContent = site;
-                btn.className = `site-btn px-4 py-2 font-medium rounded-lg transition duration-150 ${currentSite === site ? 'bg-indigo-700 text-white shadow-lg' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`;
-                btn.onclick = () => setCurrentSite(site);
-                container.appendChild(btn);
+                console.log("Stock levels updated:", stockData);
+                renderStockTable();
+            }, (error) => {
+                console.error("Error setting up stock levels listener:", error);
             });
-        };
+        }
+        
+        // --- 8. INITIAL DATA SEEDING (Run once on connect if data is missing) ---
 
-        const renderStockList = () => {
-            const list = document.getElementById('stock-list');
-            list.innerHTML = '';
-            const items = Object.values(itemNames).sort((a, b) => a.name.localeCompare(b.name));
+        async function seedInitialData() {
+            const batch = writeBatch(db);
+            let needsCommit = false;
 
-            if (items.length === 0) {
-                list.innerHTML = '<p class="text-gray-500 col-span-full">No stock items are currently defined in the system. Use the Admin Panel to add items.</p>';
-                return;
-            }
-
-            items.forEach(item => {
-                const itemId = item.name;
-                const stock = currentSite ? (stockData[currentSite] ? stockData[currentSite][itemId] || 0 : 0) : '---';
-                const isLow = currentSite && stock !== '---' && stock <= item.threshold;
-                const lowStockClass = isLow ? 'bg-red-100 border-red-500' : 'bg-white border-gray-200';
-                const removeDisabled = !currentSite || stock === 0;
-                
-                const card = document.createElement('div');
-                card.className = `stock-card p-6 rounded-xl shadow-lg border-t-4 ${lowStockClass} transition duration-300 hover:shadow-xl`;
-                
-                card.innerHTML = `
-                    <h3 class="text-xl font-bold text-gray-800 mb-1">${itemId}</h3>
-                    <p class="text-sm text-gray-500 mb-4">Threshold: ${item.threshold}</p>
-                    <div class="flex justify-between items-center">
-                        <p class="text-3xl font-extrabold ${isLow ? 'text-red-600' : 'text-indigo-600'}">
-                            ${stock}
-                            <span class="text-base font-normal text-gray-500 ml-2">${currentSite ? '' : 'Total Stock'}</span>
-                        </p>
-                        <button data-item-id="${itemId}" 
-                            class="add-to-cart-btn px-4 py-2 bg-red-500 text-white font-medium rounded-lg shadow-md transition duration-150 ${removeDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-600'}"
-                            ${removeDisabled ? 'disabled' : ''}
-                            title="${currentSite ? (stock === 0 ? 'No stock to remove' : 'Remove 1 item') : 'Please select a site first'}"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block -mt-0.5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M3 1a1 1 0 000 2h1.22l.305 1.258A4 4 0 007 9h10a1 1 0 00.815-.44l.947-1.894A1.25 1.25 0 0017 5H7.491c-.34 0-.65.188-.831.493l-1.396 2.546z"/><path d="M5 13a2 2 0 110 4 2 2 0 010-4zm10 0a2 2 0 110 4 2 2 0 010-4z"/></svg>
-                            Remove
-                        </button>
-                    </div>
-                    ${isLow ? '<p class="mt-2 text-sm text-red-600 font-semibold">LOW STOCK WARNING!</p>' : ''}
-                `;
-                list.appendChild(card);
+            // Seed Item Definitions
+            const itemsSnap = await new Promise(resolve => {
+                onSnapshot(getItemsRef(), resolve, () => resolve(null)); // Resolve immediately for first load check
             });
             
-            document.querySelectorAll('.add-to-cart-btn').forEach(button => {
-                if (!button.disabled) {
-                    button.addEventListener('click', (e) => {
-                        const itemId = e.currentTarget.dataset.itemId;
-                        addToCart(itemId);
+            if (itemsSnap.empty) {
+                console.log("Seeding default items...");
+                DEFAULT_ITEMS.forEach(item => {
+                    const docRef = doc(getItemsRef(), item.id);
+                    batch.set(docRef, { name: item.name, threshold: item.threshold });
+                    needsCommit = true;
+                });
+            }
+
+            // Seed Stock Levels (Initial stock of 100 for all sites/items)
+            if (needsCommit) {
+                await batch.commit();
+                console.log("Default items seeded.");
+            }
+            
+            // Re-run batch for stock levels (can't rely on itemNames being set yet)
+            const stockBatch = writeBatch(db);
+            let stockNeedsCommit = false;
+            
+            const stockSnap = await new Promise(resolve => {
+                onSnapshot(getStockLevelsRef(), resolve, () => resolve(null));
+            });
+
+            if (stockSnap.empty) {
+                 console.log("Seeding initial stock levels...");
+                 const currentItems = itemsSnap.empty ? DEFAULT_ITEMS : itemsSnap.docs.map(d => ({id: d.id}));
+
+                 currentItems.forEach(item => {
+                    const stockUpdate = {};
+                    SITE_LOCATIONS.forEach(site => {
+                        stockUpdate[site] = 100; // Default level
                     });
-                }
-            });
-        };
-
-        const renderLowStockReview = () => {
-            if (!isAdmin) return;
-            const list = document.getElementById('low-stock-list');
-            list.innerHTML = '';
-            let lowStockFound = false;
-
-            SITE_LOCATIONS.forEach(site => {
-                const siteData = stockData[site] || {};
-                Object.keys(itemNames).forEach(itemId => {
-                    const stock = siteData[itemId] || 0;
-                    const threshold = itemNames[itemId].threshold;
-                    if (stock <= threshold) {
-                        lowStockFound = true;
-                        const p = document.createElement('p');
-                        p.className = 'p-3 bg-red-50 border-l-4 border-red-500 text-sm';
-                        p.innerHTML = `<span class="font-bold">${itemId}</span> at <span class="font-semibold">${site}</span>: Stock is <span class="text-red-600">${stock}</span> (Threshold: ${threshold})`;
-                        list.appendChild(p);
-                    }
+                    const docRef = doc(getStockLevelsRef(), item.id);
+                    stockBatch.set(docRef, stockUpdate);
+                    stockNeedsCommit = true;
                 });
-            });
-
-            if (!lowStockFound) {
-                list.innerHTML = '<p class="p-3 bg-green-50 text-green-700 font-semibold rounded-lg">All monitored stock levels are currently healthy!</p>';
             }
-        };
-
-        const renderAdminSelects = () => {
-            const itemSelects = document.querySelectorAll('#mass-update-item-select, #single-update-item-select, #delete-item-select');
             
-            // Site Selects (always the same set of locations + global option)
-            const siteSelects = document.querySelectorAll('#mass-update-site-select, #single-update-site-select');
-            
-            // Populate Site Selects
-            siteSelects.forEach(select => {
-                const selectedValue = select.value;
-                select.innerHTML = '';
-                
-                // Add Global Update option only to the Mass Update tab
-                if (select.id === 'mass-update-site-select') {
-                    select.add(new Option('All Sites (Global Update)', 'GLOBAL'));
-                }
-                
-                SITE_LOCATIONS.forEach(site => {
-                    select.add(new Option(site, site));
-                });
-
-                select.value = selectedValue || (select.id === 'mass-update-site-select' ? 'GLOBAL' : SITE_LOCATIONS[0]);
-            });
-
-
-            // Populate Item Selects
-            const items = Object.values(itemNames).sort((a, b) => a.name.localeCompare(b.name));
-            
-            itemSelects.forEach(select => {
-                const selectedValue = select.value;
-                select.innerHTML = '';
-                
-                if (items.length === 0) {
-                     select.add(new Option('No items defined', ''));
-                     return;
-                }
-
-                items.forEach(item => {
-                    select.add(new Option(item.name, item.name));
-                });
-                select.value = selectedValue || items[0].name;
-            });
-        };
-
-        const renderTransactionLog = (transactions) => {
-            const tbody = document.getElementById('transactions-body');
-            const noMessage = document.getElementById('no-transactions-message');
-            tbody.innerHTML = '';
-
-            if (transactions.length === 0) {
-                noMessage.classList.remove('hidden');
-                return;
+            if (stockNeedsCommit) {
+                 await stockBatch.commit();
+                 console.log("Initial stock levels seeded.");
             }
+        }
 
-            noMessage.classList.add('hidden');
 
-            transactions.forEach(tx => {
-                const row = document.createElement('tr');
-                const isRemoval = tx.type === 'REMOVAL' || tx.quantity < 0 || tx.type.includes('REMOVE');
-                const changeClass = isRemoval ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold';
-                const formattedTime = new Date(tx.timestamp).toLocaleString();
-                const displayQuantity = isRemoval ? `-${tx.quantity}` : (tx.quantity > 0 ? `+${tx.quantity}` : tx.quantity);
+        // --- 9. ADMIN PANEL FUNCTIONS ---
 
-                row.innerHTML = `
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formattedTime}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${tx.item}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm ${changeClass}">${displayQuantity}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tx.site}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tx.userName || 'Admin'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tx.type}</td>
+        function renderAdminItems() {
+            adminItemsList.innerHTML = '';
+            const itemIds = Object.keys(itemNames).sort();
+
+            itemIds.forEach(itemId => {
+                const item = itemNames[itemId];
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'flex items-center space-x-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg';
+                itemDiv.innerHTML = `
+                    <input type="text" id="name-${itemId}" value="${item.name}" placeholder="Item Name" class="w-1/3 p-2 border rounded-lg bg-white dark:bg-gray-600">
+                    <input type="number" id="threshold-${itemId}" value="${item.threshold}" min="1" placeholder="Threshold" class="w-24 p-2 border rounded-lg bg-white dark:bg-gray-600">
+                    <button onclick="saveItem('${itemId}')" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-lg text-sm">Save</button>
+                    <button onclick="deleteItem('${itemId}')" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-lg text-sm">Delete</button>
                 `;
-                tbody.appendChild(row);
+                adminItemsList.appendChild(itemDiv);
             });
-        };
+        }
 
-        // --- 10. CART LOGIC ---
-
-        const addToCart = (itemId) => {
-            if (!currentSite) {
-                alertUser("Error", "Please select your operating site first.", "red");
-                return;
-            }
-            // Check if there is stock to remove
-            const currentStock = stockData[currentSite] ? (stockData[currentSite][itemId] || 0) : 0;
-            const itemsInCart = itemCart[itemId] || 0;
-
-            if (currentStock > itemsInCart) {
-                itemCart[itemId] = (itemCart[itemId] || 0) + 1;
-                updateCartButton();
-            } else {
-                 alertUser("Stock Limit", "You cannot remove more items than are currently in stock at this site.", "yellow");
-            }
-        };
-
-        const updateCartButton = () => {
-            const totalItems = Object.values(itemCart).reduce((sum, count) => sum + count, 0);
-            const cartButton = document.getElementById('cart-button');
+        window.saveItem = async (itemId) => {
+            const name = document.getElementById(`name-${itemId}`).value;
+            const threshold = parseInt(document.getElementById(`threshold-${itemId}`).value, 10);
             
-            if (totalItems > 0) {
-                cartButton.textContent = `Remove Items (${totalItems})`;
-                cartButton.classList.remove('hidden');
-                cartButton.onclick = showCartModal;
-            } else {
-                cartButton.classList.add('hidden');
-            }
-        };
-
-        const showCartModal = () => {
-            const itemsHTML = Object.keys(itemCart).map(itemId => `
-                <div class="flex justify-between items-center py-2 border-b border-gray-100">
-                    <span class="font-medium text-gray-800">${itemId}</span>
-                    <span class="text-indigo-600 font-bold">${itemCart[itemId]}</span>
-                </div>
-            `).join('');
-
-            const modalContent = `
-                <h3 class="text-2xl font-bold text-indigo-600 mb-4">Confirm Stock Removal</h3>
-                <p class="text-gray-700 mb-3">Site: <span class="font-semibold">${currentSite}</span></p>
-                <div class="max-h-48 overflow-y-auto mb-4 p-2 border rounded-lg bg-gray-50">
-                    ${itemsHTML}
-                </div>
-                <div class="mb-4">
-                    <label for="staff-name" class="block text-sm font-medium text-gray-700">Staff Name / Initiator</label>
-                    <input type="text" id="staff-name" placeholder="Enter your name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5">
-                </div>
-                <div class="flex justify-end space-x-3">
-                    <button onclick="hideModal()" class="px-4 py-2 bg-gray-300 text-gray-800 font-medium rounded-lg hover:bg-gray-400">Cancel</button>
-                    <button id="confirm-removal-btn" class="px-4 py-2 bg-red-600 text-white font-medium rounded-lg shadow-md hover:bg-red-700">Confirm Removal</button>
-                </div>
-            `;
-            showModal(modalContent);
-
-            document.getElementById('confirm-removal-btn').onclick = async () => {
-                const userName = document.getElementById('staff-name').value.trim();
-                if (!userName) {
-                    alertUser("Validation Error", "Please enter your name.", "red");
-                    return;
-                }
-                await processCart(userName);
-            };
-        };
-
-        const processCart = async (userName) => {
-            hideModal();
-            showLoading(true);
-
-            try {
-                // Use a Firestore Transaction to ensure atomic updates
-                await runTransaction(db, async (transaction) => {
-                    const siteDocRef = doc(getStockLevelsRef(), currentSite);
-                    const siteDoc = await transaction.get(siteDocRef);
-
-                    if (!siteDoc.exists()) {
-                        throw new Error(`Site data for ${currentSite} not found.`);
-                    }
-
-                    const newStock = siteDoc.data();
-                    const transactionsBatch = [];
-                    let hasStockIssue = false;
-
-                    for (const itemId in itemCart) {
-                        const quantityToRemove = itemCart[itemId];
-                        const currentQty = newStock[itemId] || 0;
-                        
-                        if (currentQty < quantityToRemove) {
-                            hasStockIssue = true;
-                            // Throwing here will roll back the transaction
-                            throw new Error(`Insufficient stock for ${itemId} (Need: ${quantityToRemove}, Have: ${currentQty}).`);
-                        }
-
-                        const finalQty = currentQty - quantityToRemove;
-
-                        // Update the stock document
-                        newStock[itemId] = finalQty;
-                        
-                        // Prepare transaction log entry
-                        transactionsBatch.push({
-                            timestamp: new Date().toISOString(),
-                            site: currentSite,
-                            item: itemId,
-                            quantity: quantityToRemove,
-                            userName: userName,
-                            type: 'REMOVAL',
-                            userId: userId,
-                        });
-                    }
-                    
-                    if (hasStockIssue) return; // Should be caught by the throw, but included for safety
-
-                    // Commit the updated stock levels for the site
-                    transaction.update(siteDocRef, newStock);
-
-                    // Add transaction logs
-                    for (const tx of transactionsBatch) {
-                        transaction.set(doc(getTransactionsRef()), tx);
-                    }
-                });
-
-                alertUser("Success", "Stock removed and transaction logged successfully!", "green");
-                itemCart = {}; // Clear cart
-                updateCartButton();
-            } catch (error) {
-                console.error("Transaction failed: ", error);
-                alertUser("Error", `Stock update failed: ${error.message}`, "red");
-            } finally {
-                showLoading(false);
-            }
-        };
-
-
-        // --- 11. ADMIN LOGIC ---
-
-        const handleAdminLogin = () => {
-            if (isAdmin) {
-                 // If already logged in, offer to log out/view dashboard
-                const modalContent = `
-                    <h3 class="text-xl font-bold text-gray-700 mb-4">Admin Status</h3>
-                    <p class="text-gray-700 mb-4">You are currently logged in as Administrator. What would you like to do?</p>
-                    <div class="flex justify-end space-x-3">
-                        <button onclick="setAdminMode(false); hideModal();" class="px-4 py-2 bg-gray-500 text-white font-medium rounded-lg hover:bg-gray-600">Switch to Staff View</button>
-                        <button onclick="hideModal();" class="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow-md hover:bg-indigo-700">Continue to Dashboard</button>
-                    </div>
-                `;
-                showModal(modalContent);
+            if (!name || isNaN(threshold) || threshold < 1) {
+                console.error("Invalid item details.");
                 return;
             }
 
-            const modalContent = `
-                <h3 class="text-2xl font-bold text-indigo-600 mb-4">Admin Login</h3>
-                <p class="text-gray-700 mb-4">Please enter the administrator password.</p>
-                <div class="mb-4">
-                    <label for="admin-password" class="block text-sm font-medium text-gray-700">Password</label>
-                    <input type="password" id="admin-password" placeholder="Enter password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5">
-                </div>
-                <div class="flex justify-end space-x-3">
-                    <button onclick="hideModal()" class="px-4 py-2 bg-gray-300 text-gray-800 font-medium rounded-lg hover:bg-gray-400">Cancel</button>
-                    <button id="confirm-login-btn" class="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow-md hover:bg-indigo-700">Login</button>
-                </div>
-                <p id="login-message" class="mt-3 text-sm font-medium text-red-600 hidden"></p>
-            `;
-            showModal(modalContent);
-
-            const passwordInput = document.getElementById('admin-password');
-            const loginMessage = document.getElementById('login-message');
-
-            document.getElementById('confirm-login-btn').onclick = () => {
-                if (passwordInput.value === ADMIN_PASSWORD) {
-                    isAdmin = true;
-                    hideModal();
-                    setAdminMode(true);
-                } else {
-                    loginMessage.textContent = "Invalid password.";
-                    loginMessage.classList.remove('hidden');
-                }
-            };
-        };
-
-        const setAdminMode = (enabled) => {
-            const adminDashboard = document.getElementById('admin-dashboard');
-            const staffView = document.getElementById('staff-view');
-            const siteSelection = document.getElementById('site-selection');
-            const adminLoginBtn = document.getElementById('admin-login-btn');
-
-            if (enabled) {
-                adminDashboard.classList.remove('hidden');
-                staffView.classList.add('hidden');
-                siteSelection.classList.add('hidden');
-                adminLoginBtn.textContent = 'Admin Logged In';
-                adminLoginBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
-                adminLoginBtn.classList.add('bg-gray-500', 'cursor-default');
-                setAdminTab('low-stock'); // Default to the first tab
-                renderAdminSelects();
-            } else {
-                adminDashboard.classList.add('hidden');
-                staffView.classList.remove('hidden');
-                siteSelection.classList.remove('hidden');
-                adminLoginBtn.textContent = 'Admin Login';
-                adminLoginBtn.classList.remove('bg-gray-500', 'cursor-default');
-                adminLoginBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
-                isAdmin = false;
+            try {
+                const docRef = doc(getItemsRef(), itemId);
+                await updateDoc(docRef, { name, threshold });
+                console.log(`Item ${name} saved.`);
+            } catch (e) {
+                console.error("Failed to save item:", e);
             }
         };
 
-        const setAdminTab = (tabName) => {
-            document.querySelectorAll('.admin-tab-btn').forEach(btn => {
-                const isActive = btn.dataset.tab === tabName;
-                btn.classList.toggle('border-indigo-600', isActive);
-                btn.classList.toggle('text-indigo-600', isActive);
-                btn.classList.toggle('border-transparent', !isActive);
-                btn.classList.toggle('text-gray-500', !isActive);
-            });
-
-            document.querySelectorAll('.admin-content-tab').forEach(content => {
-                const isActive = content.dataset.tabContent === tabName;
-                content.classList.toggle('hidden', !isActive);
-            });
-
-            // Re-render select options every time admin views a tab that uses them
-            if (['mass-update', 'single-update', 'item-management'].includes(tabName)) {
-                renderAdminSelects();
-            }
-        };
-        
-        // --- 12. ADMIN ACTION HANDLERS ---
-        
-        const handleMassUpdate = async () => {
-            const site = document.getElementById('mass-update-site-select').value;
-            const itemId = document.getElementById('mass-update-item-select').value;
-            const quantityInput = document.getElementById('mass-update-quantity');
-            const quantity = parseInt(quantityInput.value);
-            const messageEl = document.getElementById('mass-update-message');
-
-            messageEl.classList.add('hidden');
-
-            if (!itemId || isNaN(quantity) || quantity === 0) {
-                messageEl.textContent = 'Please select an item and enter a non-zero quantity.';
-                messageEl.classList.remove('hidden');
-                messageEl.classList.add('text-red-600');
-                return;
-            }
-
-            showLoading(true);
+        window.deleteItem = async (itemId) => {
+            if (!confirm(`Are you sure you want to delete ${itemNames[itemId].name}? This will remove all stock history too!`)) return;
 
             try {
-                const sitesToUpdate = site === 'GLOBAL' ? SITE_LOCATIONS : [site];
-                const results = await Promise.all(sitesToUpdate.map(async (location) => {
-                    try {
-                        await runTransaction(db, async (transaction) => {
-                            const siteDocRef = doc(getStockLevelsRef(), location);
-                            const siteDoc = await transaction.get(siteDocRef);
-
-                            const currentQty = siteDoc.exists() ? (siteDoc.data()[itemId] || 0) : 0;
-                            const finalQty = Math.max(0, currentQty + quantity);
-                            
-                            // Update stock
-                            transaction.set(siteDocRef, { [itemId]: finalQty }, { merge: true });
-
-                            // Log transaction
-                            const tx = {
-                                timestamp: new Date().toISOString(),
-                                site: location,
-                                item: itemId,
-                                quantity: Math.abs(quantity),
-                                userName: 'System Admin',
-                                type: quantity > 0 ? 'MASS_ADD' : 'MASS_REMOVE',
-                                userId: userId,
-                            };
-                            transaction.set(doc(getTransactionsRef()), tx);
-                        });
-                        return { success: true, location };
-                    } catch (e) {
-                        console.error(`Update failed for ${location}:`, e);
-                        return { success: false, location, error: e.message };
-                    }
-                }));
-
-                const failedUpdates = results.filter(r => !r.success);
-
-                if (failedUpdates.length === 0) {
-                    messageEl.textContent = `Successfully applied change of ${quantity} to ${itemId} ${site === 'GLOBAL' ? 'across ALL sites.' : `at ${site}.`}`;
-                    messageEl.classList.remove('text-red-600');
-                    messageEl.classList.add('text-green-600');
-                } else {
-                    messageEl.textContent = `Update completed with ${failedUpdates.length} error(s). Check console for details.`;
-                    messageEl.classList.remove('text-green-600');
-                    messageEl.classList.add('text-yellow-600');
-                }
+                // Delete Item Definition
+                await deleteDoc(doc(getItemsRef(), itemId));
                 
-                messageEl.classList.remove('hidden');
-                quantityInput.value = ''; // Clear input
+                // Delete Stock Level Document
+                await deleteDoc(doc(getStockLevelsRef(), itemId));
 
-            } catch (error) {
-                console.error("Mass update processing failed: ", error);
-                messageEl.textContent = `Fatal update error: ${error.message}`;
-                messageEl.classList.remove('text-green-600', 'text-yellow-600');
-                messageEl.classList.add('text-red-600');
-                messageEl.classList.remove('hidden');
-            } finally {
-                showLoading(false);
+                console.log(`Item ${itemId} deleted.`);
+            } catch (e) {
+                console.error("Failed to delete item:", e);
             }
         };
 
-        const handleSingleUpdate = async () => {
-            const site = document.getElementById('single-update-site-select').value;
-            const itemId = document.getElementById('single-update-item-select').value;
-            const newStockInput = document.getElementById('single-update-new-stock');
-            const newStock = parseInt(newStockInput.value);
-            const messageEl = document.getElementById('single-update-message');
-
-            messageEl.classList.add('hidden');
-
-            if (!itemId || !site || isNaN(newStock) || newStock < 0) {
-                messageEl.textContent = 'Please select a site, an item, and enter a valid non-negative stock level.';
-                messageEl.classList.remove('hidden');
-                messageEl.classList.add('text-red-600');
-                return;
-            }
-
-            showLoading(true);
-
-            try {
-                const siteDocRef = doc(getStockLevelsRef(), site);
-                
-                await runTransaction(db, async (transaction) => {
-                    const siteDoc = await transaction.get(siteDocRef);
-                    
-                    const currentQty = siteDoc.exists() ? (siteDoc.data()[itemId] || 0) : 0;
-                    const changeQty = newStock - currentQty; // Calculate the change
-                    
-                    // Update stock
-                    transaction.set(siteDocRef, { [itemId]: newStock }, { merge: true });
-
-                    // Log transaction
-                    const tx = {
-                        timestamp: new Date().toISOString(),
-                        site: site,
-                        item: itemId,
-                        quantity: Math.abs(changeQty),
-                        userName: 'System Admin (Set)',
-                        type: changeQty > 0 ? 'MANUAL_ADD' : (changeQty < 0 ? 'MANUAL_REMOVE' : 'MANUAL_SET_NO_CHANGE'),
-                        userId: userId,
-                    };
-                    transaction.set(doc(getTransactionsRef()), tx);
-                });
-                
-                messageEl.textContent = `Successfully set stock of ${itemId} at ${site} to ${newStock}.`;
-                messageEl.classList.remove('text-red-600');
-                messageEl.classList.add('text-green-600');
-                messageEl.classList.remove('hidden');
-
-            } catch (error) {
-                console.error("Single update transaction failed: ", error);
-                messageEl.textContent = `Update failed: ${error.message}`;
-                messageEl.classList.remove('text-green-600');
-                messageEl.classList.add('text-red-600');
-                messageEl.classList.remove('hidden');
-            } finally {
-                showLoading(false);
-            }
-        };
-
-        const handleAddNewItem = async () => {
-            const nameInput = document.getElementById('new-item-name');
-            const thresholdInput = document.getElementById('new-item-threshold');
-            const messageEl = document.getElementById('add-item-message');
-            messageEl.classList.add('hidden');
-
-            const itemName = nameInput.value.trim();
-            const threshold = parseInt(thresholdInput.value);
-
-            if (!itemName || isNaN(threshold) || threshold < 0) {
-                messageEl.textContent = 'Please enter a valid item name and a non-negative threshold.';
-                messageEl.classList.remove('hidden', 'text-green-600');
-                messageEl.classList.add('text-red-600');
-                return;
-            }
-            if (itemNames[itemName]) {
-                messageEl.textContent = `Error: Item "${itemName}" already exists.`;
-                messageEl.classList.remove('hidden', 'text-green-600');
-                messageEl.classList.add('text-red-600');
-                return;
-            }
-
-            showLoading(true);
-            try {
-                // 1. Add item metadata
-                const itemDocRef = doc(getItemsRef(), itemName);
-                await setDoc(itemDocRef, { 
-                    name: itemName, 
-                    threshold: threshold,
-                    createdAt: new Date().toISOString()
-                });
-
-                // 2. Initialize stock (set to 0) for the new item at all sites
-                await Promise.all(SITE_LOCATIONS.map(async (site) => {
-                    const siteDocRef = doc(getStockLevelsRef(), site);
-                    await setDoc(siteDocRef, { [itemName]: 0 }, { merge: true });
-                }));
-
-                messageEl.textContent = `Item "${itemName}" added successfully with threshold ${threshold}. Stock initialized to 0 at all sites.`;
-                messageEl.classList.remove('hidden', 'text-red-600');
-                messageEl.classList.add('text-green-600');
-                nameInput.value = '';
-                thresholdInput.value = '';
-            } catch (error) {
-                console.error("Error adding new item:", error);
-                messageEl.textContent = `Failed to add item: ${error.message}`;
-                messageEl.classList.remove('hidden', 'text-green-600');
-                messageEl.classList.add('text-red-600');
-            } finally {
-                showLoading(false);
-            }
-        };
-
-        const handleDeleteItem = async () => {
-            const select = document.getElementById('delete-item-select');
-            const itemId = select.value;
-            const messageEl = document.getElementById('delete-item-message');
-            messageEl.classList.add('hidden');
-
-            if (!itemId) {
-                messageEl.textContent = 'Please select an item to delete.';
-                messageEl.classList.remove('hidden', 'text-green-600');
-                messageEl.classList.add('text-red-600');
-                return;
-            }
-
-            // Custom confirmation dialog
-            const confirmHTML = `
-                <h3 class="text-xl font-bold text-red-600 mb-4">Confirm Deletion</h3>
-                <p class="text-gray-700 mb-4">Are you sure you want to permanently delete **${itemId}**? This will remove all history and stock levels for this item.</p>
-                <div class="flex justify-end space-x-3">
-                    <button onclick="hideModal()" class="px-4 py-2 bg-gray-300 text-gray-800 font-medium rounded-lg hover:bg-gray-400">Cancel</button>
-                    <button id="confirm-delete-action" class="px-4 py-2 bg-red-600 text-white font-medium rounded-lg shadow-md hover:bg-red-700">Delete Permanently</button>
-                </div>
+        document.getElementById('add-new-item-btn').addEventListener('click', () => {
+            const newItemId = `item_${Date.now()}`;
+            const newDiv = document.createElement('div');
+            newDiv.className = 'flex items-center space-x-4 p-3 bg-yellow-50 dark:bg-yellow-900/50 rounded-lg';
+            newDiv.innerHTML = `
+                <input type="text" id="name-${newItemId}" value="New Item" placeholder="Item Name" class="w-1/3 p-2 border rounded-lg bg-white dark:bg-gray-600">
+                <input type="number" id="threshold-${newItemId}" value="10" min="1" placeholder="Threshold" class="w-24 p-2 border rounded-lg bg-white dark:bg-gray-600">
+                <button onclick="commitNewItem('${newItemId}')" class="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg text-sm">Create</button>
+                <button onclick="this.parentNode.remove()" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-lg text-sm">Cancel</button>
             `;
-            showModal(confirmHTML);
+            adminItemsList.prepend(newDiv);
+        });
 
-            document.getElementById('confirm-delete-action').onclick = async () => {
-                hideModal();
-                showLoading(true);
-                try {
-                    // 1. Delete item metadata
-                    await deleteDoc(doc(getItemsRef(), itemId));
+        window.commitNewItem = async (itemId) => {
+            const name = document.getElementById(`name-${itemId}`).value;
+            const threshold = parseInt(document.getElementById(`threshold-${itemId}`).value, 10);
 
-                    // 2. Remove item field from all site stock documents
-                    // Use a transaction here to ensure consistency across updates
-                    const updatePromises = SITE_LOCATIONS.map(site => 
-                        runTransaction(db, async (transaction) => {
-                            const siteDocRef = doc(getStockLevelsRef(), site);
-                            const siteDoc = await transaction.get(siteDocRef);
-                            
-                            if (siteDoc.exists() && siteDoc.data()[itemId] !== undefined) {
-                                const newData = { ...siteDoc.data() };
-                                delete newData[itemId];
-                                transaction.set(siteDocRef, newData);
-                            }
-                        })
-                    );
-                    await Promise.all(updatePromises);
-                    
-                    messageEl.textContent = `Item "${itemId}" has been successfully deleted from all records.`;
-                    messageEl.classList.remove('hidden', 'text-red-600');
-                    messageEl.classList.add('text-green-600');
-                } catch (error) {
-                    console.error("Error deleting item:", error);
-                    messageEl.textContent = `Failed to delete item: ${error.message}`;
-                    messageEl.classList.remove('hidden', 'text-green-600');
-                    messageEl.classList.add('text-red-600');
-                } finally {
-                    showLoading(false);
-            };
-        };
-    };
+            if (!name || isNaN(threshold) || threshold < 1) {
+                console.error("Invalid item details for creation.");
+                return;
+            }
 
-        // --- 13. INITIAL SETUP ---
-
-        const setCurrentSite = (site) => {
-            currentSite = site;
-            document.getElementById('current-site-display').textContent = site;
-            renderSiteButtons();
-            renderStockList();
-        };
-
-        const setupEventHandlers = () => {
-            document.getElementById('admin-login-btn').addEventListener('click', handleAdminLogin);
+            const batch = writeBatch(db);
             
-            // Setup tab switching logic
-            document.querySelectorAll('.admin-tab-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    setAdminTab(e.target.dataset.tab);
+            // Create Item Definition
+            const itemRef = doc(getItemsRef(), itemId);
+            batch.set(itemRef, { name, threshold });
+
+            // Create Initial Stock Level (100 for all sites)
+            const stockUpdate = {};
+            SITE_LOCATIONS.forEach(site => { stockUpdate[site] = 100; });
+            const stockRef = doc(getStockLevelsRef(), itemId);
+            batch.set(stockRef, stockUpdate);
+
+            try {
+                await batch.commit();
+                console.log(`New item ${name} created successfully.`);
+            } catch (e) {
+                console.error("Failed to create new item:", e);
+            }
+        };
+
+        // --- 10. CORE FIREBASE SETUP (FIXED LOGIC) ---
+        async function setupFirebase() {
+            showLoading("Initializing Firebase...");
+            try {
+                // 1. Get mandatory global variables provided by the platform
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+                if (!firebaseConfig || !firebaseConfig.apiKey) {
+                    throw new Error("Platform Firebase configuration is missing or invalid.");
+                }
+
+                // 2. Initialize App and Services
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // 3. Authentication using the MANDATORY custom token or anonymous fallback
+                showLoading("Authenticating User...");
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // 4. Set up Auth State Listener (Crucial for getting the final userId and starting data listeners)
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid; 
+                        isAuthReady = true;
+                        userIdDisplay.querySelector('span').textContent = userId;
+                        userIdDisplay.classList.remove('hidden');
+
+                        showLoading("Seeding default data...");
+                        await seedInitialData();
+
+                        showLoading("Setting up real-time listeners...");
+                        setupItemsListener();
+                        setupStockLevelsListener();
+                        
+                        showConnected();
+                        renderSiteSelect();
+
+                    } else {
+                        showError('Authentication Failed: User not logged in.');
+                    }
                 });
-            });
 
-            // Admin Action Buttons
-            document.getElementById('confirm-mass-update-btn').addEventListener('click', handleMassUpdate);
-            document.getElementById('confirm-single-update-btn').addEventListener('click', handleSingleUpdate);
-            document.getElementById('add-new-item-btn').addEventListener('click', handleAddNewItem);
-            document.getElementById('delete-item-btn').addEventListener('click', handleDeleteItem);
-        };
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                showError(`Failed to connect or authenticate: ${error.message}. Please ensure Firebase is set up correctly.`);
+            }
+        }
 
-        window.onload = function () {
-            // Wait for DOM to be fully loaded
-            setupEventHandlers();
-            initFirebase();
-            updateCartButton(); // Ensure cart state is reset/loaded
-        };
-
-        // Expose hideModal and alertUser for use by buttons inside modal HTML
-        window.hideModal = hideModal;
-        window.alertUser = alertUser; 
-
+        // Start the application
+        setupFirebase();
     </script>
 </body>
 </html>
