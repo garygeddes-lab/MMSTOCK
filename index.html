@@ -61,6 +61,13 @@
             <div id="staff-view" class="w-full md:w-2/3 bg-card-light shadow-xl rounded-xl p-6 transition-all duration-300">
                 <h2 class="text-2xl font-semibold mb-4 text-secondary-teal border-b pb-2">Staff Stock Removal</h2>
                 
+                <!-- NEW: Selected Location Banner for UX clarity -->
+                <div id="selected-location-banner" class="mb-4 hidden">
+                    <p class="text-lg font-bold p-3 rounded-lg bg-secondary-teal text-white shadow-md text-center">
+                        Removing stock from: <span id="current-removal-location" class="uppercase"></span>
+                    </p>
+                </div>
+
                 <!-- Location Selector (Buttons) -->
                 <div class="mb-4">
                     <p class="text-sm font-medium mb-2 text-gray-700">Select Your Location:</p>
@@ -301,6 +308,7 @@
         let items = [];     // { id, name, threshold }
         let stockLevels = []; // { locationId, itemId, quantity, itemName, locationName }
         let transactions = []; // Full transaction history for admin log
+        let lowStockComments = {}; // { commentId: { comment, lastUpdate, ... } }
         
         // Front-End State
         let selectedLocationId = null;
@@ -409,6 +417,8 @@
                 
                 // Start listening to collections
                 setupFirestoreListeners();
+                // Clean up old transactions on initial load
+                cleanUpOldTransactions(); 
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
                 showMessageModal("Initialization Error", "Failed to connect to the database. Please check console for details.");
@@ -429,6 +439,10 @@
                 renderAdminLocationFilters();
                 renderAdminLocationSelects();
                 console.log("Locations updated:", locations);
+                // Ensure banner is hidden if no location is selected (e.g., on first load)
+                if (!selectedLocationId) {
+                    document.getElementById('selected-location-banner').classList.add('hidden');
+                }
             }, (error) => console.error("Error fetching locations:", error));
 
             // 2. Items Listener (Private Data)
@@ -437,8 +451,8 @@
                 items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderAdminSettings();
                 renderAdminItemSelects();
-                // Re-render stock display and report if items change
                 renderStockDisplay();
+                checkAndClearLowStockComments(); // Check for clearance when item thresholds might change
                 if (isAdmin) renderLowStockReport();
                 console.log("Items updated:", items);
             }, (error) => console.error("Error fetching items:", error));
@@ -448,6 +462,7 @@
             onSnapshot(stockLevelsColRef, (snapshot) => {
                 stockLevels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderStockDisplay();
+                checkAndClearLowStockComments(); // Check for clearance when stock levels change
                 if (isAdmin) renderLowStockReport();
                 console.log("Stock levels updated:", stockLevels.length);
             }, (error) => console.error("Error fetching stock levels:", error));
@@ -461,7 +476,93 @@
                 if (isAdmin) renderTransactionLog();
                 console.log("Transactions updated:", transactions.length);
             }, (error) => console.error("Error fetching transactions:", error));
+            
+            // 5. Low Stock Comments Listener (Public Data)
+            const commentsRef = collection(db, `/artifacts/${appId}/public/data/low_stock_comments`);
+            onSnapshot(commentsRef, (snapshot) => {
+                lowStockComments = {};
+                snapshot.forEach(doc => lowStockComments[doc.id] = doc.data());
+                // The main clearance check happens when stock levels change (listener 3)
+                if (isAdmin) renderLowStockReport();
+                console.log("Low stock comments updated.");
+            }, (error) => console.error("Error fetching low stock comments:", error));
         };
+
+        /**
+         * Core logic to automatically delete low stock comments if the stock level 
+         * has recovered (quantity > threshold). This ensures the Admin report clears itself.
+         */
+        const checkAndClearLowStockComments = async () => {
+            if (!db || items.length === 0 || locations.length === 0 || Object.keys(lowStockComments).length === 0) return;
+
+            const commentsToDelete = [];
+            const commentsRef = collection(db, `/artifacts/${appId}/public/data/low_stock_comments`);
+
+            // Check every stock level against its threshold
+            for (const sl of stockLevels) {
+                const item = items.find(i => i.id === sl.itemId);
+                if (!item) continue;
+
+                const commentId = `${sl.locationId}_${sl.itemId}`;
+                
+                // If stock is healthy AND a comment exists
+                if (sl.quantity > item.threshold && lowStockComments[commentId]) {
+                    commentsToDelete.push(commentId);
+                }
+            }
+
+            if (commentsToDelete.length > 0) {
+                console.log(`Clearing ${commentsToDelete.length} low stock comments as stock levels recovered.`);
+                const batch = writeBatch(db);
+                for (const id of commentsToDelete) {
+                    const commentRef = doc(commentsRef, id);
+                    batch.delete(commentRef);
+                }
+                try {
+                    await batch.commit();
+                } catch (error) {
+                    console.error("Batch delete of low stock comments failed:", error);
+                }
+            }
+        };
+
+        /**
+         * Implements the 60-day data retention policy by deleting old transaction records.
+         */
+        const cleanUpOldTransactions = async () => {
+            if (!db || !userId) return;
+
+            // Calculate cutoff date (60 days ago)
+            const sixtyDays = 60 * 24 * 60 * 60 * 1000;
+            const cutoffDate = Timestamp.fromMillis(Date.now() - sixtyDays);
+
+            const transactionsColRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
+            
+            // Query for documents older than 60 days
+            const q = query(transactionsColRef, where('timestamp', '<', cutoffDate));
+            
+            try {
+                const snapshot = await getDocs(q);
+                if (snapshot.empty) {
+                    console.log("No transactions older than 60 days to clean up.");
+                    return;
+                }
+
+                console.log(`Found ${snapshot.docs.length} transactions to delete for retention policy.`);
+                const batch = writeBatch(db);
+                
+                snapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+
+                await batch.commit();
+                console.log("Old transactions successfully cleaned up.");
+            } catch (error) {
+                console.error("Error cleaning up old transactions:", error);
+                // Show a non-blocking message to the console, but not the user
+            }
+        };
+
 
         // --- Frontend (Staff) Logic ---
 
@@ -487,6 +588,11 @@
             renderStockDisplay();
             renderCart();
             document.getElementById('stock-message').classList.add('hidden');
+            
+            // --- UX Improvement: Show selected location banner ---
+            const locName = locations.find(l => l.id === locationId)?.name;
+            document.getElementById('current-removal-location').textContent = locName;
+            document.getElementById('selected-location-banner').classList.remove('hidden');
         };
 
         /** Renders the main stock level display and action buttons */
@@ -780,12 +886,20 @@
         const renderTransactionLog = (filteredTransactions = transactions) => {
             const tableContainer = document.getElementById('transaction-log-table');
             
+            // Add retention policy note
+            const retentionNote = `
+                <div class="p-3 mb-4 bg-yellow-100 border border-yellow-400 rounded-lg text-sm text-yellow-800 font-medium">
+                    Note: Transaction log data is automatically deleted after **60 days** to comply with retention policies.
+                </div>
+            `;
+            
             if (filteredTransactions.length === 0) {
-                tableContainer.innerHTML = '<p class="text-gray-500 italic mt-4">No transactions found matching criteria.</p>';
+                tableContainer.innerHTML = retentionNote + '<p class="text-gray-500 italic mt-4">No transactions found matching criteria.</p>';
                 return;
             }
 
             const header = `
+                ${retentionNote}
                 <table class="min-w-full bg-white border border-gray-200 rounded-lg">
                     <thead class="bg-gray-100">
                         <tr>
@@ -968,22 +1082,18 @@
 
         // --- Admin: Low Stock Report ---
 
-        /** Renders the Low Stock Report */
-        const renderLowStockReport = async () => {
+        /** Renders the Low Stock Report (now uses global lowStockComments state) */
+        const renderLowStockReport = () => {
             const container = document.getElementById('low-stock-report');
-            container.innerHTML = '<p class="text-gray-500 italic">Loading low stock data...</p>';
-
+            
             if (stockLevels.length === 0 || items.length === 0 || locations.length === 0) {
                 container.innerHTML = '<p class="text-gray-500 italic">Stock or item definitions are empty.</p>';
                 return;
             }
-
-            // Fetch current low stock comments (Public Data) - Correct 5-segment path
-            const commentsRef = collection(db, `/artifacts/${appId}/public/data/low_stock_comments`);
-            const commentsSnap = await getDocs(commentsRef);
-            const lowStockComments = {};
-            commentsSnap.forEach(doc => lowStockComments[doc.id] = doc.data());
             
+            // Use the global, real-time updated state
+            const currentLowStockComments = lowStockComments; 
+
             let reportHTML = '';
             let lowStockFound = false;
 
@@ -996,43 +1106,24 @@
                     const quantity = stock?.quantity || 0;
                     const threshold = item.threshold || 0;
 
-                    if (quantity <= threshold && quantity > 0) {
+                    if (quantity <= threshold) {
                         lowStockFound = true;
                         lowItemsInLoc = true;
                         
                         const commentId = `${loc.id}_${item.id}`;
-                        const comment = lowStockComments[commentId]?.comment || 'No comment yet.';
-                        const lastUpdate = lowStockComments[commentId]?.lastUpdate ? new Date(lowStockComments[commentId].lastUpdate.seconds * 1000).toLocaleString() : 'Never';
+                        const commentData = currentLowStockComments[commentId];
+                        const comment = commentData?.comment || 'No comment yet.';
+                        const lastUpdate = commentData?.lastUpdate ? new Date(commentData.lastUpdate.seconds * 1000).toLocaleString() : 'Never';
+                        
+                        const statusClass = quantity === 0 ? 'bg-red-50 p-4 rounded-lg border border-red-300' : 'bg-yellow-50 p-4 rounded-lg border border-yellow-300';
+                        const statusText = quantity === 0 ? 
+                            `<span class="text-red-600 font-extrabold">(OUT OF STOCK)</span>` : 
+                            '';
 
                         locationReportHTML += `
-                            <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-300">
-                                <p class="font-bold text-gray-800">${item.name}</p>
+                            <div class="${statusClass}">
+                                <p class="font-bold text-gray-800">${item.name} ${statusText}</p>
                                 <p class="text-sm text-yellow-800">Current: ${quantity} / Threshold: ${threshold}</p>
-                                
-                                <div class="mt-2 text-sm text-gray-600">
-                                    <p><strong>Order Status:</strong> ${comment}</p>
-                                    <p class="text-xs italic">Last Updated: ${lastUpdate}</p>
-                                </div>
-
-                                <div class="mt-3 flex gap-2">
-                                    <input type="text" id="comment-input-${commentId}" placeholder="Update order status comment" class="p-2 border rounded-lg w-full text-sm">
-                                    <button onclick="saveLowStockComment('${loc.id}', '${item.id}')" class="py-2 px-3 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150 text-sm whitespace-nowrap">Save</button>
-                                </div>
-                            </div>
-                        `;
-                    } else if (quantity === 0 && threshold > 0) {
-                         // Out of Stock
-                        lowStockFound = true;
-                        lowItemsInLoc = true;
-                        
-                        const commentId = `${loc.id}_${item.id}`;
-                        const comment = lowStockComments[commentId]?.comment || 'No comment yet.';
-                        const lastUpdate = lowStockComments[commentId]?.lastUpdate ? new Date(lowStockComments[commentId].lastUpdate.seconds * 1000).toLocaleString() : 'Never';
-
-                        locationReportHTML += `
-                            <div class="bg-red-50 p-4 rounded-lg border border-red-300">
-                                <p class="font-bold text-gray-800">${item.name} <span class="text-red-600 font-extrabold">(OUT OF STOCK)</span></p>
-                                <p class="text-sm text-red-800">Current: ${quantity} / Threshold: ${threshold}</p>
                                 
                                 <div class="mt-2 text-sm text-gray-600">
                                     <p><strong>Order Status:</strong> ${comment}</p>
@@ -1089,7 +1180,7 @@
                 });
                 commentInput.value = ''; // Clear input on success
                 showMessageModal("Success", "Low stock comment saved successfully.");
-                renderLowStockReport(); // Refresh report
+                // renderLowStockReport will automatically refresh due to onSnapshot
             } catch (error) {
                 console.error("Error saving comment:", error);
                 showMessageModal("Error", "Failed to save comment. See console for details.");
