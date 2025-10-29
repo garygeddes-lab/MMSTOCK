@@ -99,6 +99,7 @@
     <!-- Firebase SDK Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // Import Auth utilities, but only call them if not in fallback mode
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, query, writeBatch, Timestamp, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -109,10 +110,9 @@
 
         // --- 1. USER'S APP CONFIGURATION & GLOBAL STATE ---
         
-        // Configuration fallback used if the platform variables are invalid or missing.
+        // Configuration fallback. We intentionally omit 'apiKey' to prevent the Auth SDK from failing 
+        // when attempting to connect with an invalid key during initialization.
         const LIVE_FIREBASE_CONFIG_FALLBACK = {
-            // Using a syntactically correct, but functionally empty config to bypass API key errors
-            apiKey: "DUMMY_API_KEY_FOR_FALLBACK", 
             authDomain: "fallback-domain.firebaseapp.com",
             projectId: "mmstock-fallback",
         };
@@ -639,6 +639,7 @@
                     try {
                         firebaseConfig = JSON.parse(configString);
                         if (!firebaseConfig || !firebaseConfig.apiKey) {
+                            // Even if it parses, if the key is missing, treat it as invalid.
                             throw new Error("Missing API Key after parse.");
                         }
                     } catch (e) {
@@ -662,8 +663,7 @@
                 showLoading("Authenticating User...");
                 
                 if (isFallback) {
-                    // CRITICAL FIX: Skip Firebase Auth initialization to avoid API key validation errors.
-                    // Generate a random, unauthenticated ID for Firestore path compliance.
+                    // Skip Auth setup entirely and generate a local ID for Firestore path compliance.
                     userId = `unauthenticated_${crypto.randomUUID()}`;
                     isAuthReady = true; 
                     console.warn("[WARN] Running in UN-AUTHENTICATED mode. User ID is locally generated.");
