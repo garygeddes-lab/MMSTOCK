@@ -1658,134 +1658,102 @@
 </div>
 
 
+
+
+
 <script>
 (function(){
   const qs = s => document.querySelector(s);
   const qsa = s => Array.from(document.querySelectorAll(s));
 
-  // Keep track of admin selection from table clicks
-  window.selectedItemId = null;
-  window.selectedLocationId = null;
-
-  // Intercept clicks on Admin Settings tables:
-  document.addEventListener('click', (e) => {
-    const adminPanel = qs('#admin-panel');
-    if (!adminPanel || adminPanel.classList.contains('hidden')) return;
-
-    // Item delete buttons: prefer data-item-id; otherwise look up closest row with data-id
-    if (e.target.closest('.delete-item-btn')) {
-      const btn = e.target.closest('.delete-item-btn');
-      const id = btn.dataset.itemId || btn.getAttribute('data-id') || btn.closest('[data-item-id]')?.dataset.itemId || btn.closest('tr')?.getAttribute('data-id');
-      window.selectedItemId = id || null;
-      // Open admin-specific modal
-      const m = qs('#admin-confirm-item-modal');
-      if (m) m.classList.remove('hidden');
-      e.stopPropagation();
-      e.preventDefault();
-      return false;
-    }
-
-    // Location delete buttons
-    if (e.target.closest('.delete-location-btn')) {
-      const btn = e.target.closest('.delete-location-btn');
-      const id = btn.dataset.locationId || btn.getAttribute('data-id') || btn.closest('[data-location-id]')?.dataset.locationId || btn.closest('tr')?.getAttribute('data-id');
-      window.selectedLocationId = id || null;
-      const m = qs('#admin-confirm-location-modal');
-      if (m) m.classList.remove('hidden');
-      e.stopPropagation();
-      e.preventDefault();
-      return false;
-    }
-  }, true);
-
-  // Bind confirm delete buttons to Firestore deletes (admin-only)
-  const bindAdminDeletes = () => {
-    const itemBtn = qs('#admin-confirm-item-delete');
-    const locBtn = qs('#admin-confirm-location-delete');
-    if (itemBtn && !itemBtn.dataset.bound) {
-      itemBtn.addEventListener('click', async () => {
-        try {
-          if (!window.selectedItemId) return alert('No item selected.');
-          await deleteDoc(doc(db, "items", window.selectedItemId));
-          showMessageModal("Success", "Item deleted successfully.");
-          qs('#admin-confirm-item-modal')?.classList.add('hidden');
-          window.selectedItemId = null;
-        } catch (err) {
-          console.error(err);
-          showMessageModal("Error", "Failed to delete item: " + (err?.message || err));
-        }
-      });
-      itemBtn.dataset.bound = "1";
-    }
-    if (locBtn && !locBtn.dataset.bound) {
-      locBtn.addEventListener('click', async () => {
-        try {
-          if (!window.selectedLocationId) return alert('No location selected.');
-          await deleteDoc(doc(db, "locations", window.selectedLocationId));
-          showMessageModal("Success", "Location deleted successfully.");
-          qs('#admin-confirm-location-modal')?.classList.add('hidden');
-          window.selectedLocationId = null;
-        } catch (err) {
-          console.error(err);
-          showMessageModal("Error", "Failed to delete location: " + (err?.message || err));
-        }
-      });
-      locBtn.dataset.bound = "1";
-    }
-  };
-  bindAdminDeletes();
-  document.addEventListener('DOMContentLoaded', bindAdminDeletes);
-
-  // Override global confirmRemoval ONLY when staff panel is visible
-  if (typeof window.confirmRemoval === 'function') {
-    const staffConfirm = window.confirmRemoval;
-    window.confirmRemoval = function () {
-      const staffView = qs('#staff-view');
-      if (staffView && !staffView.classList.contains('hidden')) {
-        return staffConfirm();
-      }
-      // If admin panel is visible, ignore staff flow
-      return false;
+  // ----------------- GLOBAL: message modal (manual close) -----------------
+  if (typeof window.showMessageModal !== 'function') {
+    window.showMessageModal = function(title, message){
+      const m = qs('#message-modal');
+      if(!m) return alert((title?title+': ':'') + (message||''));
+      const t = qs('#message-title');
+      const b = qs('#message-text');
+      if(t) t.textContent = title || 'Info';
+      if(b) b.textContent = message || '';
+      m.classList.remove('hidden');
     };
   }
 
-  // Ensure Apply Filters button binds to the global handler
-  window.applyLogFilters = function () {
-    if (!window.transactions || !Array.isArray(window.transactions)) {
-      console.warn('No transactions loaded');
-      return;
+  // ----------------- ADMIN: capture ids from settings table clicks -----------------
+  // Allow both dedicated classes and generic trash buttons to set selected ids
+  document.addEventListener('click', (e) => {
+    const admin = qs('#admin-panel');
+    if (!admin || admin.classList.contains('hidden')) return;
+
+    const btn = e.target.closest('button, a, span, svg, i');
+    if (!btn) return;
+
+    // Prefer explicit data attributes on the target or ancestor row
+    const row = btn.closest('tr') || btn.closest('[data-id]') || btn.closest('[data-item-id]') || btn.closest('[data-location-id]');
+    const itemId = btn.dataset.itemId || row?.dataset.itemId || row?.getAttribute('data-item-id') || row?.getAttribute('data-id');
+    const locId  = btn.dataset.locationId || row?.dataset.locationId || row?.getAttribute('data-location-id');
+
+    // Heuristics: if element has a class indicating delete item/location
+    const cls = (btn.className || '') + ' ' + (row?.className || '');
+    const isItemDelete = /delete-item-btn|delete-item|item-delete|trash-item/i.test(cls);
+    const isLocDelete  = /delete-location-btn|delete-location|location-delete|trash-location/i.test(cls);
+
+    if (isItemDelete && itemId) {
+      window.selectedItemId = itemId;
     }
-    const staff = (qs('#log-filter-staff')?.value || '').toLowerCase();
-    const loc = qs('#log-filter-location')?.value || '';
-    const s = qs('#log-filter-start-date')?.value || '';
-    const e = qs('#log-filter-end-date')?.value || '';
+    if (isLocDelete && locId) {
+      window.selectedLocationId = locId;
+    }
+  }, true);
 
-    const filtered = window.transactions.filter(t => {
-      const sm = staff ? (t.staffName || '').toLowerCase().includes(staff) : true;
-      const lm = loc ? t.location === loc : true;
-      let dm = true;
-      if ((s || e) && t.timestamp) {
-        const d = new Date(t.timestamp.seconds * 1000);
-        const sd = s ? new Date(s) : new Date(0);
-        const ed = e ? new Date(e) : new Date();
-        const einc = new Date(ed.getTime() + 86400000 - 1);
-        dm = d >= sd && d <= einc;
-      }
-      return sm && lm && dm;
-    });
-    if (window.renderTransactionLog) window.renderTransactionLog(filtered);
+  // ----------------- ADMIN: confirm delete (inline onclick support) -----------------
+  // These functions are called by your inline onclick="confirmRemoveItemAdmin()" etc.
+  window.confirmRemoveItemAdmin = async function(){
+    try {
+      const id = window.selectedItemId;
+      if (!id) return alert('No item selected.');
+      await deleteDoc(doc(db, 'items', id));
+      window.selectedItemId = null;
+      showMessageModal('Success', 'Item deleted successfully.');
+    } catch (err) {
+      console.error(err);
+      showMessageModal('Error', 'Failed to delete item: ' + (err?.message || err));
+    }
   };
-  const filtersBtn = qs('#apply-filters-btn');
-  if (filtersBtn) filtersBtn.onclick = () => window.applyLogFilters();
-  document.addEventListener('DOMContentLoaded', () => {
-    const b = qs('#apply-filters-btn');
-    if (b) b.onclick = () => window.applyLogFilters();
-  });
 
-  // Populate Items To Remove list right before staff confirmation
+  window.confirmRemoveLocationAdmin = async function(){
+    try {
+      const id = window.selectedLocationId;
+      if (!id) return alert('No location selected.');
+      await deleteDoc(doc(db, 'locations', id));
+      window.selectedLocationId = null;
+      showMessageModal('Success', 'Location deleted successfully.');
+    } catch (err) {
+      console.error(err);
+      showMessageModal('Error', 'Failed to delete location: ' + (err?.message || err));
+    }
+  };
+
+  // Also bind admin confirm modal buttons if present
+  const bindAdminConfirmButtons = () => {
+    const itemBtn = qs('#admin-confirm-item-delete');
+    const locBtn  = qs('#admin-confirm-location-delete');
+    if (itemBtn && !itemBtn.dataset.bound) {
+      itemBtn.addEventListener('click', () => window.confirmRemoveItemAdmin());
+      itemBtn.dataset.bound = '1';
+    }
+    if (locBtn && !locBtn.dataset.bound) {
+      locBtn.addEventListener('click', () => window.confirmRemoveLocationAdmin());
+      locBtn.dataset.bound = '1';
+    }
+  };
+  bindAdminConfirmButtons();
+  document.addEventListener('DOMContentLoaded', bindAdminConfirmButtons);
+
+  // ----------------- STAFF: items-to-remove summary before confirmation -----------------
   window.showConfirmRemovalModal = function () {
     const staffView = qs('#staff-view');
-    if (!staffView || staffView.classList.contains('hidden')) return; // only for staff screen
+    if (!staffView || staffView.classList.contains('hidden')) return; // only staff flow
     const list = qs('#confirm-remove-list');
     const cart = window.removalCart || {};
     if (list) {
@@ -1800,16 +1768,53 @@
     qs('#confirm-remove-modal')?.classList.remove('hidden');
   };
 
-  // Provide a generic showMessageModal if missing
-  if (typeof window.showMessageModal !== 'function') {
-    window.showMessageModal = function (title, message) {
-      const m = qs('#message-modal');
-      if (!m) return alert((title ? title + ': ' : '') + message);
-      qs('#message-title').textContent = title || 'Info';
-      qs('#message-text').textContent = message || '';
-      m.classList.remove('hidden');
-    };
-  }
+  // ----------------- FILTERS: null-safe apply and re-render -----------------
+  window.applyLogFilters = function(){
+    try {
+      const staffInput = qs('#log-filter-staff');
+      const locInput   = qs('#log-filter-location');
+      const sInput     = qs('#log-filter-start-date');
+      const eInput     = qs('#log-filter-end-date');
+
+      const staff = (staffInput ? staffInput.value : '').toLowerCase();
+      const loc   = (locInput ? locInput.value : '');
+      const s     = (sInput ? sInput.value : '');
+      const e     = (eInput ? eInput.value : '');
+
+      const data = Array.isArray(window.transactions) ? window.transactions : [];
+      const filtered = data.filter(t => {
+        const sm = staff ? (t.staffName || '').toLowerCase().includes(staff) : true;
+        const lm = loc ? t.location === loc : true;
+        let dm = true;
+        if ((s || e) && t.timestamp) {
+          const d  = new Date(t.timestamp.seconds * 1000);
+          const sd = s ? new Date(s) : new Date(0);
+          const ed = e ? new Date(e) : new Date();
+          const einc = new Date(ed.getTime() + 86400000 - 1);
+          dm = d >= sd && d <= einc;
+        }
+        return sm && lm && dm;
+      });
+
+      if (typeof window.renderTransactionLog === 'function') {
+        window.renderTransactionLog(filtered);
+      }
+    } catch (err) {
+      console.error('applyLogFilters error:', err);
+    }
+  };
+
+  // Bind the Apply Filters button by ID or by label if necessary
+  const bindFilters = () => {
+    const btn = qs('#apply-filters-btn') || qsa('button').find(b => /apply\s*filters/i.test(b.textContent||''));
+    if (btn && !btn.dataset.boundFilters) {
+      btn.onclick = () => window.applyLogFilters();
+      btn.dataset.boundFilters = '1';
+    }
+  };
+  bindFilters();
+  document.addEventListener('DOMContentLoaded', bindFilters);
+
 })();
 </script>
 
