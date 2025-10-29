@@ -138,8 +138,7 @@
                                 <option value="">Filter by Location</option>
                                 <!-- Options populated by JS -->
                             </select>
-                            <input type="date" id="log-filter-start-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="Start Date">
-<input type="date" id="log-filter-end-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="End Date">
+                            <input type="date" id="log-filter-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
                             <button onclick="applyLogFilters()" class="py-2 px-4 bg-primary-purple text-white rounded-lg hover:bg-primary-purple/90 transition duration-150">Apply Filters</button>
                             <button onclick="exportLog()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Download Log (CSV)</button>
                         </div>
@@ -1587,110 +1586,5 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
 
         initializeFirebase();
     </script>
-
-
-
-
-<script>
-(function(){
-  function qs(sel){return document.querySelector(sel);}
-  function qsa(sel){return Array.from(document.querySelectorAll(sel));}
-
-  // --- Admin Tabs ---
-  window.showAdminTab = function(tabName){
-    qsa('.admin-tab-content').forEach(s=>s.classList.add('hidden'));
-    const active = qs('#admin-tab-' + tabName);
-    if(active) active.classList.remove('hidden');
-    qsa('.admin-nav-item').forEach(b=>b.classList.remove('active'));
-    const targetBtn = qsa('.admin-nav-item').find(b=>(b.getAttribute('onclick')||'').includes("'" + tabName + "'"));
-    if(targetBtn) targetBtn.classList.add('active');
-  };
-
-  // --- Admin Login ---
-  window.toggleAdminLogin = function(){
-    const modal = qs('#admin-login-modal');
-    const err = qs('#login-error');
-    if(!modal) return;
-    modal.classList.toggle('hidden');
-    if(!modal.classList.contains('hidden')){
-      const pwd = qs('#admin-password');
-      if(pwd) pwd.value='';
-      if(err) err.classList.add('hidden');
-    }
-  };
-
-  window.adminLogin = function(){
-    const pwd = (qs('#admin-password')?.value || '').trim();
-    const err = qs('#login-error');
-    if(pwd==='admin123'){
-      qs('#admin-login-modal')?.classList.add('hidden');
-      qs('#admin-panel')?.classList.remove('hidden');
-      qs('#staff-view')?.classList.add('hidden');
-      qs('#summary-card')?.classList.add('hidden');
-      window.showAdminTab('log');
-    }else{
-      err?.classList.remove('hidden');
-    }
-  };
-
-  // --- Transaction Filter ---
-  window.applyLogFilters = function(){
-    if(!window.transactions || !Array.isArray(window.transactions)) return;
-    const staffFilter = (qs('#log-filter-staff')?.value||'').toLowerCase();
-    const locFilter = qs('#log-filter-location')?.value||'';
-    const start = qs('#log-filter-start-date')?.value||'';
-    const end = qs('#log-filter-end-date')?.value||'';
-
-    const filtered = window.transactions.filter(t=>{
-      const staffMatch = staffFilter ? (t.staffName||'').toLowerCase().includes(staffFilter) : true;
-      const locMatch = locFilter ? t.location===locFilter : true;
-      let dateMatch = true;
-      if((start||end) && t.timestamp){
-        const tx = new Date(t.timestamp.seconds*1000);
-        const s = start?new Date(start):new Date(0);
-        const e = end?new Date(end):new Date();
-        const eInc = new Date(e.getTime()+86400000-1);
-        dateMatch = tx>=s && tx<=eInc;
-      }
-      return staffMatch && locMatch && dateMatch;
-    });
-    if(typeof window.renderTransactionLog==='function'){
-      window.renderTransactionLog(filtered);
-    }
-  };
-
-  // --- Auto-refresh after stock update ---
-  window.refreshAfterTransaction = function(){
-    setTimeout(()=>{ location.reload(); },1200);
-  };
-
-  // --- Show confirm modal with items ---
-  window.showConfirmRemovalModal = function(){
-    const listContainer = qs('#confirm-remove-list');
-    if(!listContainer) return;
-    const cartItems = Object.entries(window.removalCart||{}).filter(([id,qty])=>qty>0);
-    if(cartItems.length===0){
-      listContainer.innerHTML='<li class="text-gray-500 italic">No items selected for removal.</li>';
-    }else{
-      listContainer.innerHTML=cartItems.map(([id,qty])=>{
-        const itemName=(window.items?.find(i=>i.id===id)?.name)||'Unknown Item';
-        return `<li>${itemName} — <strong>${qty}</strong></li>`;
-      }).join('');
-    }
-    qs('#confirm-remove-modal')?.classList.remove('hidden');
-  };
-
-  // --- Hook into confirm button if present ---
-  const confirmBtn = qs('#confirm-remove-button');
-  if(confirmBtn && !confirmBtn.dataset.listener){
-    confirmBtn.addEventListener('click', ()=>{
-      window.refreshAfterTransaction();
-    });
-    confirmBtn.dataset.listener='true';
-  }
-
-})();
-</script>
-
 </body>
 </html>
