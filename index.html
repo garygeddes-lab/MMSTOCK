@@ -270,7 +270,7 @@
 
             <input type="text" id="staff-name" placeholder="Your Name (Required)" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-primary-purple focus:border-primary-purple">
             
-            <button onclick="confirmRemoval()" class="w-full py-3 bg-primary-purple text-white font-bold rounded-lg shadow-md hover:bg-primary-purple/90 transition duration-150 ease-in-out">
+            <button onclick="confirmRemoveItemAdmin()" class="w-full py-3 bg-primary-purple text-white font-bold rounded-lg shadow-md hover:bg-primary-purple/90 transition duration-150 ease-in-out">
                 Confirm & Record Transaction
             </button>
             <button onclick="closeCheckoutModal()" class="w-full mt-2 py-2 text-primary-purple rounded-lg hover:bg-gray-100 transition duration-150 ease-in-out">
@@ -1517,7 +1517,7 @@
             const modalActions = document.getElementById('modal-actions');
             modalActions.innerHTML = `
                 <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
-                <button onclick="confirmRemoval()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Item</button>
+                <button onclick="confirmRemoveLocationAdmin()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Item</button>
             `;
             document.getElementById('message-modal').classList.remove('hidden');
         };
@@ -1682,6 +1682,91 @@
         : '<li class="text-gray-500 italic">No items selected for removal.</li>';
     }
     qs('#checkout-modal')?.classList.remove('hidden');
+  };
+
+})();
+</script>
+
+
+<script>
+(function(){
+  // Admin item deletion
+  window.confirmRemoveItemAdmin = async function(){
+    try {
+      // assume selectedItemId available from modal context
+      if (!window.selectedItemId) return alert('No item selected.');
+      await deleteDoc(doc(db, "items", window.selectedItemId));
+      showMessageModal("Success", "Item deleted successfully.");
+    } catch(err){
+      console.error("Error deleting item:", err);
+      showMessageModal("Error", "Failed to delete item: " + err.message);
+    }
+  };
+
+  // Admin location deletion
+  window.confirmRemoveLocationAdmin = async function(){
+    try {
+      if (!window.selectedLocationId) return alert('No location selected.');
+      await deleteDoc(doc(db, "locations", window.selectedLocationId));
+      showMessageModal("Success", "Location deleted successfully.");
+    } catch(err){
+      console.error("Error deleting location:", err);
+      showMessageModal("Error", "Failed to delete location: " + err.message);
+    }
+  };
+
+  // Ensure showMessageModal is defined globally
+  if (typeof window.showMessageModal !== 'function'){
+    window.showMessageModal = function(title, message){
+      const m = document.getElementById('message-modal');
+      if(!m) return alert(title + ": " + message);
+      document.getElementById('message-title').textContent = title;
+      document.getElementById('message-text').textContent = message;
+      m.classList.remove('hidden');
+    };
+  }
+
+  // Fix Items To Remove summary
+  window.showConfirmRemovalModal = function(){
+    const listContainer = document.getElementById('confirm-remove-list');
+    if(!listContainer) return;
+    const cartItems = Object.entries(window.removalCart||{}).filter(([id,qty])=>qty>0);
+    if(cartItems.length===0){
+      listContainer.innerHTML='<li class="text-gray-500 italic">No items selected for removal.</li>';
+    } else {
+      listContainer.innerHTML = cartItems.map(([id,qty])=>{
+        const itemName = (window.items?.find(i=>i.id===id)?.name)||'Unknown Item';
+        return `<li>${itemName} — <strong>${qty}</strong></li>`;
+      }).join('');
+    }
+    document.getElementById('confirm-remove-modal')?.classList.remove('hidden');
+  };
+
+  // Fix Apply Filters to re-render correctly
+  window.applyLogFilters = function(){
+    if(!window.transactions || !Array.isArray(window.transactions)){
+      console.warn('No transactions loaded');
+      return;
+    }
+    const staff = (document.getElementById('log-filter-staff')?.value||'').toLowerCase();
+    const loc = document.getElementById('log-filter-location')?.value||'';
+    const s = document.getElementById('log-filter-start-date')?.value||'';
+    const e = document.getElementById('log-filter-end-date')?.value||'';
+    const filtered = window.transactions.filter(t=>{
+      const sm = staff ? (t.staffName||'').toLowerCase().includes(staff) : true;
+      const lm = loc ? t.location===loc : true;
+      let dm = true;
+      if((s||e)&&t.timestamp){
+        const d=new Date(t.timestamp.seconds*1000);
+        const sd=s?new Date(s):new Date(0);
+        const ed=e?new Date(e):new Date();
+        const einc=new Date(ed.getTime()+86400000-1);
+        dm=d>=sd&&d<=einc;
+      }
+      return sm&&lm&&dm;
+    });
+    if(window.renderTransactionLog) window.renderTransactionLog(filtered);
+    else console.warn('renderTransactionLog() not found');
   };
 
 })();
