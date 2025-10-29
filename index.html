@@ -945,91 +945,81 @@
         };
 
         /** Executes the atomic deletion of a transaction and reverses the stock change */
-        window.deleteTransaction = (transactionId, quantityChange, locationName, itemName) => {
-            // The stock adjustment is the reverse of the recorded quantity
-            const stockAdjustment = -quantityChange; 
-            const action = stockAdjustment > 0 ? 'increase' : 'decrease';
-            const absAdjustment = Math.abs(stockAdjustment);
+window.deleteTransaction = (transactionId, quantityChange, locationName, itemName) => {
+    // The stock adjustment is the reverse of the recorded quantity
+    const stockAdjustment = -quantityChange;
+    const action = stockAdjustment > 0 ? 'increase' : 'decrease';
+    const absAdjustment = Math.abs(stockAdjustment);
 
-            const warningBody = `
-                <p class="text-gray-700 mb-4">You are about to delete a transaction recorded for **${itemName}** at **${locationName}**.</p>
-                <p class="text-red-600 font-bold mb-4">WARNING: This will automatically **${action}** the stock level for this item by **${absAdjustment}** to reverse the transaction's effect.</p>
-                <p class="text-sm text-gray-500">Do you wish to proceed?</p>
-            `;
+    const warningBody = `
+        <p class="text-gray-700 mb-4">You are about to delete a transaction recorded for <strong>${itemName}</strong> at <strong>${locationName}</strong>.</p>
+        <p class="text-red-600 font-bold mb-4">WARNING: This will automatically ${action} the stock level for this item by ${absAdjustment} to reverse the transaction's effect.</p>
+        <p class="text-sm text-gray-500">Do you wish to proceed?</p>
+    `;
 
-            // Function to perform the deletion
-            const performDeletion = async () => {
-                closeMessageModal();
-                showMessageModal("Processing...", "Deleting transaction and adjusting stock. Please wait.");
+    // Define and attach performDeletion globally so the button can find it
+    window.performDeletion = async () => {
+        closeMessageModal();
+        showMessageModal("Processing...", "Deleting transaction and adjusting stock. Please wait...");
 
-                const transactionRef = doc(db, `/artifacts/${appId}/users/${userId}/transactions`, transactionId);
-                
-                const item = items.find(i => i.name === itemName);
-                const location = locations.find(l => l.name === locationName);
+        const transactionRef = doc(db, `/artifacts/${appId}/users/${userId}/transactions`, transactionId);
 
-                if (!item || !location) {
-                    showMessageModal("Error", "Could not find associated item or location data. Cannot adjust stock, but the log entry will be removed.");
-                    await deleteDoc(transactionRef);
-                    return;
+        const item = items.find(i => i.name === itemName);
+        const location = locations.find(l => l.name === locationName);
+
+        if (!item || !location) {
+            showMessageModal("Error", "Could not find associated item or location data. Cannot adjust stock, but the log entry will be removed.");
+            await deleteDoc(transactionRef);
+            return;
+        }
+
+        const stockDocId = `${location.id}_${item.id}`;
+        const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
+
+        try {
+            await runTransaction(db, async (t) => {
+                const stockSnap = await t.get(stockRef);
+
+                if (!stockSnap.exists()) {
+                    throw new Error(`Stock document not found for reversal. Log entry deleted.`);
                 }
-                
-                const stockDocId = `${location.id}_${item.id}`;
-                const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
 
-                try {
-                    // Use a transaction for the atomic delete and stock reversal
-                    await runTransaction(db, async (t) => {
-                        // 1. Read Stock Document
-                        const stockSnap = await t.get(stockRef);
-                        
-                        if (!stockSnap.exists()) {
-                            // If stock document is missing, proceed with transaction deletion, but throw an error for the user to see.
-                            throw new Error(`Stock document not found for reversal. Log entry deleted.`);
-                        }
-                        
-                        const currentQuantity = stockSnap.data().quantity;
-                        const newQuantity = currentQuantity + stockAdjustment;
+                const currentQuantity = stockSnap.data().quantity;
+                const newQuantity = currentQuantity + stockAdjustment;
 
-                        if (newQuantity < 0) {
-                            // Rollback the transaction if it results in negative stock
-                            throw new Error(`Reversing this transaction would result in negative stock (${currentQuantity} + ${stockAdjustment} = ${newQuantity}). Aborting.`);
-                        }
-                        
-                        // 2. Update Stock Document
-                        t.update(stockRef, { quantity: newQuantity });
-                        
-                        // 3. Delete Transaction Document
-                        t.delete(transactionRef);
-                    });
-
-                    showMessageModal("Success", `Transaction deleted and stock for ${itemName} at ${locationName} adjusted by ${stockAdjustment}.`);
-                } catch (error) {
-                    console.error("Atomic Deletion/Adjustment failed: ", error);
-                    // Check if it's the "Stock document not found" error to provide a softer message
-                    if (error.message.includes("Stock document not found for reversal")) {
-                         // Fallback: Just delete the log entry if stock reversal failed due to missing stock doc
-                        await deleteDoc(transactionRef);
-                        showMessageModal("Partial Success", `Transaction deleted. Stock adjustment failed because the stock item was not found.`);
-                    } else {
-                        showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
-                    }
+                if (newQuantity < 0) {
+                    throw new Error(`Reversing this transaction would result in negative stock (${currentQuantity} + ${stockAdjustment} = ${newQuantity}). Aborting.`);
                 }
-            };
 
-            // Set up the custom confirmation modal
-            document.getElementById('message-title').textContent = "Confirm Transaction Deletion";
-            document.getElementById('message-body').innerHTML = warningBody;
+                t.update(stockRef, { quantity: newQuantity });
+                t.delete(transactionRef);
+            });
 
-            const modalActions = document.getElementById('modal-actions');
-            modalActions.innerHTML = `
-                <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
-                <button onclick="performDeletion()" class="py-2 px-4 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-150">Confirm Delete</button>
-            `;
+            showMessageModal("Success", `Transaction deleted and stock for ${itemName} at ${locationName} adjusted by ${stockAdjustment}.`);
+        } catch (error) {
+            console.error("Atomic Deletion/Adjustment failed: ", error);
+            if (error.message.includes("Stock document not found for reversal")) {
+                await deleteDoc(transactionRef);
+                showMessageModal("Partial Success", `Transaction deleted. Stock adjustment failed because the stock item was not found.`);
+            } else {
+                showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
+            }
+        }
+    };
 
-            document.getElementById('message-modal').classList.remove('hidden');
-        };
+    // Create and show the confirmation modal
+    document.getElementById('message-title').textContent = "Confirm Transaction Deletion";
+    document.getElementById('message-body').innerHTML = warningBody;
 
-        /** Applies filters to the transaction log */
+    const modalActions = document.getElementById('modal-actions');
+    modalActions.innerHTML = `
+        <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
+        <button onclick="performDeletion()" class="py-2 px-4 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-150">Confirm Delete</button>
+    `;
+
+    document.getElementById('message-modal').classList.remove('hidden');
+};
+
         window.applyLogFilters = () => {
             const staffFilter = document.getElementById('log-filter-staff').value.toLowerCase();
             const locationFilter = document.getElementById('log-filter-location').value;
