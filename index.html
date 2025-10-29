@@ -127,11 +127,11 @@
 
     <!-- Firebase SDKs -->
     <script type="module">
-        // --- CORRECTED IMPORTS: setLogLevel is removed as it's not exported here. ---
+        // --- Firebase SDK Imports ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, collection, writeBatch, runTransaction, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // --- END CORRECTED IMPORTS ---
+        import { getFirestore, doc, onSnapshot, collection, writeBatch, runTransaction, setDoc, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // --- END Imports ---
         
         // Global state for application
         let firebaseApp, db, auth, userId = null;
@@ -148,10 +148,15 @@
         // --- Core Firebase Setup & Global Elements ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
-        let firebaseConfig = null;
-        const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+        // HARDCODED FIX: Using the configuration provided by the user as a fallback.
+        const userProvidedConfigString = '{"apiKey": "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE", "authDomain": "mmstock-8bcdf.firebaseapp.com", "projectId": "mmstock-8bcdf", "storageBucket": "mmstock-8bcdf.firebasestorage.app", "messagingSenderId": "935228101629", "appId": "1:935228101629:web:766421e0da43becc323f94", "measurementId": "G-NWJ4Z7ZHT8"}';
         
-        // --- DEBUGGING LOG ADDED HERE ---
+        // Prefer the environment variable __firebase_config, but fallback to the hardcoded string if it's not available.
+        const rawConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? __firebase_config : userProvidedConfigString;
+        
+        let firebaseConfig = null;
+        
+        // --- DEBUGGING LOG (Confirms environment variable is now using the user-provided config) ---
         console.log("DEBUG: Raw __firebase_config string:", rawConfig); 
         // ---------------------------------
         
@@ -234,7 +239,7 @@
 
         // --- Initialization ---
         async function initializeFirebase() {
-            if (!firebaseConfig) { // This is the check that fails
+            if (!firebaseConfig) { // This check should now pass thanks to the hardcoded config
                 authStatusEl.textContent = 'Firebase Config Missing. Cannot connect to database.';
                 displayError("Firebase configuration is missing. Cannot initialize Firestore.");
                 return;
@@ -245,6 +250,9 @@
                 firebaseApp = initializeApp(firebaseConfig);
                 db = getFirestore(firebaseApp);
                 auth = getAuth(firebaseApp);
+                
+                // IMPORTANT: Enable debug logging for deeper diagnostics
+                setLogLevel('debug');
 
                 // Sign in with platform token or anonymously
                 if (initialAuthToken) {
