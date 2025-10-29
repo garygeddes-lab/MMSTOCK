@@ -138,8 +138,8 @@
                                 <option value="">Filter by Location</option>
                                 <!-- Options populated by JS -->
                             </select>
-                            <input type="date" id="log-filter-start-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="Start Date">
-<input type="date" id="log-filter-end-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="End Date">
+                            <input type="date" id="log-filter-start-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
+<input type="date" id="log-filter-end-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
                             <button onclick="applyLogFilters()" class="py-2 px-4 bg-primary-purple text-white rounded-lg hover:bg-primary-purple/90 transition duration-150">Apply Filters</button>
                             <button onclick="exportLog()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Download Log (CSV)</button>
                         </div>
@@ -306,17 +306,14 @@
 
         // Data Models
         let locations = []; // { id, name }
-        let items = [];
-        window.items = items;     // { id, name, threshold }
+        let items = [];     // { id, name, threshold }
         let stockLevels = []; // { locationId, itemId, quantity, itemName, locationName }
-        let transactions = [];
-        window.transactions = transactions; // Full transaction history for admin log
+        let transactions = []; // Full transaction history for admin log
         let lowStockComments = {}; // { commentId: { comment, lastUpdate, ... } }
         
         // Front-End State
         let selectedLocationId = null;
-        let removalCart = {};
-        window.removalCart = removalCart; // { itemId: quantity_to_remove }
+        let removalCart = {}; // { itemId: quantity_to_remove }
         
         // Admin State
         const ADMIN_PASSWORD = 'admin123';
@@ -453,7 +450,6 @@
             const itemsColRef = collection(db, `/artifacts/${appId}/users/${userId}/items`);
             onSnapshot(itemsColRef, (snapshot) => {
                 items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                window.items = items;
                 renderAdminSettings();
                 renderAdminItemSelects();
                 renderStockDisplay();
@@ -479,7 +475,6 @@
                     .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
                 
                 if (isAdmin) renderTransactionLog();
-                window.transactions = transactions;
                 console.log("Transactions updated:", transactions.length);
             }, (error) => console.error("Error fetching transactions:", error));
             
@@ -694,18 +689,6 @@
 
         /** Opens the checkout modal */
         window.openCheckoutModal = () => {
-            const list = document.getElementById('checkout-cart-list');
-            if (list) {
-                const entries = Object.entries(removalCart || {}).filter(([id, qty]) => qty > 0);
-                if (entries.length === 0) {
-                    list.innerHTML = '<li class="text-gray-500 italic">No items selected for removal.</li>';
-                } else {
-                    list.innerHTML = entries.map(([id, qty]) => {
-                        const itemName = (items.find(i => i.id === id)?.name) || 'Unknown Item';
-                        return `<li>${itemName} — <strong>${qty}</strong></li>`;
-                    }).join('');
-                }
-            }
             document.getElementById('checkout-modal').classList.remove('hidden');
         };
 
@@ -818,11 +801,9 @@
                     });
                     message += `</ul><p class="mt-2 text-sm text-gray-500">The failed items remain in your cart. Please try again.</p>`;
                     showMessageModal("Partial Success", message);
-                setTimeout(()=>location.reload(), 1200);
-            } else {
+                } else {
                     showMessageModal("Success!", "Stock removal recorded and levels updated for all items.");
-                setTimeout(()=>location.reload(), 1200);
-            }
+                }
             } else {
                 // All items failed
                 let message = `All removal attempts failed. Please check current stock levels and try again.`;
@@ -1023,16 +1004,14 @@
                     });
 
                     showMessageModal("Success", `Transaction deleted and stock for ${itemName} at ${locationName} adjusted by ${stockAdjustment}.`);
-            setTimeout(()=>location.reload(), 1200);
-            } catch (error) {
+                } catch (error) {
                     console.error("Atomic Deletion/Adjustment failed: ", error);
                     // Check if it's the "Stock document not found" error to provide a softer message
                     if (error.message.includes("Stock document not found for reversal")) {
                          // Fallback: Just delete the log entry if stock reversal failed due to missing stock doc
                         await deleteDoc(transactionRef);
-                        showMessageModal("Partial Success", message);
-                setTimeout(()=>location.reload(), 1200);
-            } else {
+                        showMessageModal("Partial Success", `Transaction deleted. Stock adjustment failed because the stock item was not found.`);
+                    } else {
                         showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
                     }
                 }
@@ -1053,32 +1032,24 @@
 
         /** Applies filters to the transaction log */
         window.applyLogFilters = () => {
-            const staffFilter = document.getElementById('log-filter-staff')?.value?.toLowerCase() || '';
-            const locationFilter = document.getElementById('log-filter-location')?.value || '';
-            const startDate = document.getElementById('log-filter-start-date')?.value || '';
-            const endDate = document.getElementById('log-filter-end-date')?.value || '';
+            const staffFilter = document.getElementById('log-filter-staff').value.toLowerCase();
+            const locationFilter = document.getElementById('log-filter-location').value;
+            const dateFilter = document.getElementById('log-filter-date').value;
 
-            const data = Array.isArray(transactions) ? transactions : (window.transactions || []);
-
-            const filtered = data.filter(t => {
+            const filtered = transactions.filter(t => {
                 const staffMatch = staffFilter ? (t.staffName || '').toLowerCase().includes(staffFilter) : true;
                 const locationMatch = locationFilter ? t.location === locationFilter : true;
+                
                 let dateMatch = true;
-                if ((startDate || endDate) && t.timestamp) {
-                    const txDate = new Date(t.timestamp.seconds * 1000);
-                    const s = startDate ? new Date(startDate) : new Date(0);
-                    const e = endDate ? new Date(endDate) : new Date();
-                    const eInc = new Date(e.getTime() + 86400000 - 1);
-                    dateMatch = txDate >= s && txDate <= eInc;
+                if (dateFilter && t.timestamp) {
+                    const transactionDate = new Date(t.timestamp.seconds * 1000).toISOString().split('T')[0];
+                    dateMatch = transactionDate === dateFilter;
                 }
+
                 return staffMatch && locationMatch && dateMatch;
             });
 
-            if (typeof renderTransactionLog === 'function') {
-                renderTransactionLog(filtered);
-            } else if (typeof window.renderTransactionLog === 'function') {
-                window.renderTransactionLog(filtered);
-            }
+            renderTransactionLog(filtered);
         };
         
         /** Exports the currently visible transaction log to CSV */
@@ -1348,8 +1319,7 @@
 
                 closeMessageModal();
                 showMessageModal("Success", `Stock Check for ${locName} completed. ${updates.length} items adjusted.`);
-                setTimeout(()=>location.reload(), 1200);
-                } catch (error) {
+            } catch (error) {
                 console.error("Stock Check Adjustment failed:", error);
                 closeMessageModal();
                 showMessageModal("Error", "Failed to update stock levels. See console for details.");
@@ -1447,8 +1417,8 @@
                 
                 closeMessageModal();
                 showMessageModal("Success!", `Mass update successful. ${quantity} units of ${item.name} added/removed across ${targetLocations.length} sites.`);
-                setTimeout(()=>location.reload(), 1200);
-                } catch (error) {
+
+            } catch (error) {
                 console.error("Mass update failed:", error);
                 closeMessageModal();
                 showMessageModal("Mass Update Failed", error.message || "An unexpected error occurred during the mass update.");
@@ -1529,7 +1499,7 @@
         /** Removes a stock item (Private Data) */
         window.removeItem = async (itemId, itemName) => {
             // Using a simple modal as a prompt for confirmation since window.confirm is forbidden
-            window.confirmRemoveItem = async () => {
+            const confirmRemoval = async () => {
                 try {
                     await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/items`, itemId));
                     closeMessageModal();
@@ -1540,11 +1510,14 @@
                     showMessageModal("Error", "Failed to remove item.");
                 }
             };
-            document.getElementById(\'message-modal\').classList.remove(\'hidden\');
-                        const __btn = document.getElementById("modal-actions"); __btn.innerHTML = `
+
+            document.getElementById('message-title').textContent = "Confirm Item Deletion";
+            document.getElementById('message-body').innerHTML = `<p class="text-gray-700">Are you sure you want to remove the stock item: <strong>${itemName}</strong>? This will not remove existing stock levels.</p>`;
+            
+            const modalActions = document.getElementById('modal-actions');
+            modalActions.innerHTML = `
                 <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
-                <button onclick="confirmRemoveItem()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Item</button>
-            ` class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Item</button>
+                <button onclick="confirmRemoval()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Item</button>
             `;
             document.getElementById('message-modal').classList.remove('hidden');
         };
@@ -1573,7 +1546,7 @@
         /** Removes a location (Private Data) */
         window.removeLocation = async (locationId, locationName) => {
             // Using a simple modal as a prompt for confirmation since window.confirm is forbidden
-            window.confirmRemoveItem = async () => {
+            const confirmRemoval = async () => {
                 try {
                     await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/locations`, locationId));
                     closeMessageModal();
@@ -1584,11 +1557,14 @@
                     showMessageModal("Error", "Failed to remove location.");
                 }
             };
-            document.getElementById(\'message-modal\').classList.remove(\'hidden\');
-                        const __btn = document.getElementById("modal-actions"); __btn.innerHTML = `
+            
+            document.getElementById('message-title').textContent = "Confirm Location Deletion";
+            document.getElementById('message-body').innerHTML = `<p class="text-red-600 font-bold mb-2">WARNING: Removing ${locationName}?</p><p class="text-gray-700">This will not delete existing stock or transactions associated with this location.</p>`;
+
+            const modalActions = document.getElementById('modal-actions');
+            modalActions.innerHTML = `
                 <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
-                <button onclick="confirmRemoveItem()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Item</button>
-            ` class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Location</button>
+                <button onclick="confirmRemoval()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Location</button>
             `;
             document.getElementById('message-modal').classList.remove('hidden');
         };
@@ -1622,209 +1598,90 @@
         initializeFirebase();
     </script>
 
-
-
-
 <script>
 (function(){
   const qs = s => document.querySelector(s);
   const qsa = s => Array.from(document.querySelectorAll(s));
 
-  /* -------------------- Admin Tab Switching -------------------- */
-  window.showAdminTab = function(tabName){
-    qsa('.admin-tab-content').forEach(s => s.classList.add('hidden'));
-    const active = qs('#admin-tab-' + tabName);
+  // Admin tab switching
+  window.showAdminTab = function(tab){
+    qsa('.admin-tab-content').forEach(el=>el.classList.add('hidden'));
+    const active = qs('#admin-tab-' + tab);
     if(active) active.classList.remove('hidden');
-
-    qsa('.admin-nav-item').forEach(b => b.classList.remove('active'));
-    const btn = qsa('.admin-nav-item').find(b => (b.getAttribute('onclick')||'').includes("'" + tabName + "'"));
+    qsa('.admin-nav-item').forEach(b=>b.classList.remove('active'));
+    const btn = qsa('.admin-nav-item').find(b=>(b.getAttribute('onclick')||'').includes("'" + tab + "'"));
     if(btn) btn.classList.add('active');
   };
 
-  /* -------------------- Admin Login -------------------- */
+  // Admin login modal handlers
   window.toggleAdminLogin = function(){
-    const modal = qs('#admin-login-modal');
-    const err = qs('#login-error');
-    if(!modal) return;
-    modal.classList.toggle('hidden');
-    if(!modal.classList.contains('hidden')){
-      const pwd = qs('#admin-password');
-      if(pwd) pwd.value='';
-      if(err) err.classList.add('hidden');
+    const m = qs('#admin-login-modal');
+    const e = qs('#login-error');
+    if(!m) return;
+    m.classList.toggle('hidden');
+    if(!m.classList.contains('hidden')){
+      const p = qs('#admin-password'); if(p) p.value='';
+      if(e) e.classList.add('hidden');
     }
   };
 
-  window.adminLogin = function(){
-    const pwd = (qs('#admin-password')?.value || '').trim();
-    const err = qs('#login-error');
-    if(pwd === 'admin123'){
+  window.adminLogin = function (){
+    const pwd = (qs('#admin-password')?.value||'').trim();
+    const e = qs('#login-error');
+    if(pwd==='admin123'){
       qs('#admin-login-modal')?.classList.add('hidden');
       qs('#admin-panel')?.classList.remove('hidden');
       qs('#staff-view')?.classList.add('hidden');
       qs('#summary-card')?.classList.add('hidden');
       showAdminTab('log');
     } else {
-      if(err) err.classList.remove('hidden');
+      e?.classList.remove('hidden');
     }
   };
 
-  /* -------------------- Admin Logout -------------------- */
-  window.adminLogout = function(){
-    const adminPanel = qs('#admin-panel');
-    const staffView = qs('#staff-view');
-    const summaryCard = qs('#summary-card');
-    if(adminPanel) adminPanel.classList.add('hidden');
-    if(staffView) staffView.classList.remove('hidden');
-    if(summaryCard) summaryCard.classList.remove('hidden');
+  window.adminLogout = function (){
+    qs('#admin-panel')?.classList.add('hidden');
+    qs('#staff-view')?.classList.remove('hidden');
+    qs('#summary-card')?.classList.remove('hidden');
   };
 
-  /* -------------------- Apply Filters (Transaction Log) -------------------- */
+  // Apply Filters (global)
   window.applyLogFilters = function(){
-    if(!window.transactions || !Array.isArray(window.transactions)){
-      console.warn('No transactions loaded.');
-      return;
-    }
-    const staff = (qs('#log-filter-staff')?.value || '').toLowerCase();
-    const loc = qs('#log-filter-location')?.value || '';
-    const s = qs('#log-filter-start-date')?.value || '';
-    const e = qs('#log-filter-end-date')?.value || '';
-    const filtered = window.transactions.filter(t => {
+    const staff=(qs('#log-filter-staff')?.value||'').toLowerCase();
+    const loc=qs('#log-filter-location')?.value||'';
+    const s=qs('#log-filter-start-date')?.value||'';
+    const e=qs('#log-filter-end-date')?.value||'';
+    const data = window.transactions || [];
+    const filtered = data.filter(t=>{
       const sm = staff ? (t.staffName||'').toLowerCase().includes(staff) : true;
-      const lm = loc ? t.location === loc : true;
+      const lm = loc ? t.location===loc : true;
       let dm = true;
-      if((s || e) && t.timestamp){
-        const d = new Date(t.timestamp.seconds*1000);
-        const sd = s ? new Date(s) : new Date(0);
-        const ed = e ? new Date(e) : new Date();
-        const edInc = new Date(ed.getTime() + 86400000 - 1);
-        dm = d >= sd && d <= edInc;
+      if((s||e)&&t.timestamp){
+        const d=new Date(t.timestamp.seconds*1000);
+        const sd=s?new Date(s):new Date(0);
+        const ed=e?new Date(e):new Date();
+        const einc=new Date(ed.getTime()+86400000-1);
+        dm=d>=sd && d<=einc;
       }
       return sm && lm && dm;
     });
-    if(window.renderTransactionLog) window.renderTransactionLog(filtered);
+    if (window.renderTransactionLog) window.renderTransactionLog(filtered);
   };
 
-  /* -------------------- Refresh After Transactions -------------------- */
-  window.refreshAfterTransaction = function(){
-    setTimeout(()=>location.reload(), 1200);
-  };
-
-  /* -------------------- Show Items To Remove Summary -------------------- */
+  // Populate Items to Remove in checkout modal
   window.openCheckoutModal = function(){
-    const list = qs('#checkout-cart-list');
-    const cart = window.removalCart || {};
+    const list=qs('#checkout-cart-list');
+    const cart=window.removalCart||{};
     if(list){
-      const entries = Object.entries(cart).filter(([id,qty]) => qty > 0);
-      if(entries.length === 0){
-        list.innerHTML = '<li class="text-gray-500 italic">No items selected for removal.</li>';
-      } else {
-        list.innerHTML = entries.map(([id,qty]) => {
-          const name = (window.items?.find(i => i.id === id)?.name) || 'Unknown Item';
-          return `<li>${name} — <strong>${qty}</strong></li>`;
-        }).join('');
-      }
+      const entries=Object.entries(cart).filter(([id,q])=>q>0);
+      list.innerHTML = entries.length
+        ? entries.map(([id,q])=>{
+            const name=(window.items?.find(i=>i.id===id)?.name)||'Unknown Item';
+            return `<li>${name} — <strong>${q}</strong></li>`;
+          }).join('')
+        : '<li class="text-gray-500 italic">No items selected for removal.</li>';
     }
     qs('#checkout-modal')?.classList.remove('hidden');
-  };
-
-  /* -------------------- Expose Add Item / Location -------------------- */
-  if(typeof window.addItem !== 'function'){
-    window.addItem = async function(){
-      alert('Add Item clicked — ensure Firebase addItem() logic runs here.');
-    };
-  }
-
-  if(typeof window.addLocation !== 'function'){
-    window.addLocation = async function(){
-      alert('Add Location clicked — ensure Firebase addLocation() logic runs here.');
-    };
-  }
-
-})();
-</script>
-
-
-<script>
-(function(){
-  // Attach Firebase addItem and addLocation to window so Admin buttons work
-  if (typeof addItem === 'function') {
-    window.addItem = async function(...args) {
-      try {
-        const result = await addItem.apply(this, args);
-        console.log('Item added:', result);
-        setTimeout(() => location.reload(), 1200);
-      } catch (err) {
-        console.error('Error adding item:', err);
-        alert('Error adding item: ' + err.message);
-      }
-    };
-  } else {
-    console.warn('addItem() not found in module scope.');
-  }
-
-  if (typeof addLocation === 'function') {
-    window.addLocation = async function(...args) {
-      try {
-        const result = await addLocation.apply(this, args);
-        console.log('Location added:', result);
-        setTimeout(() => location.reload(), 1200);
-      } catch (err) {
-        console.error('Error adding location:', err);
-        alert('Error adding location: ' + err.message);
-      }
-    };
-  } else {
-    console.warn('addLocation() not found in module scope.');
-  }
-})();
-</script>
-
-
-<script>
-(function(){
-  // Wait until original module functions exist
-  const waitForFirebase = () => {
-    const origAddItem = window.addItem;
-    const origAddLocation = window.addLocation;
-
-    if (typeof origAddItem === 'function' && typeof origAddLocation === 'function') {
-      console.log('Binding admin addItem/addLocation to global scope safely');
-
-      // Safe global bindings (no recursion)
-      window.addItem = async function(...args){
-        try {
-          await origAddItem.apply(this, args);
-          console.log('Item added successfully');
-          // No reload for admin
-        } catch(err){
-          console.error('Error adding item:', err);
-        }
-      };
-
-      window.addLocation = async function(...args){
-        try {
-          await origAddLocation.apply(this, args);
-          console.log('Location added successfully');
-          // No reload for admin
-        } catch(err){
-          console.error('Error adding location:', err);
-        }
-      };
-      return true;
-    }
-    return false;
-  };
-
-  const int = setInterval(() => {
-    if (waitForFirebase()) clearInterval(int);
-  }, 500);
-
-  // Keep refreshAfterTransaction only for staff actions
-  window.refreshAfterTransaction = function(){
-    // Refresh only if in staff view (admin panel hidden)
-    const isStaffVisible = document.getElementById('staff-view') && 
-                           !document.getElementById('staff-view').classList.contains('hidden');
-    if (isStaffVisible) setTimeout(()=>location.reload(), 1200);
   };
 
 })();
