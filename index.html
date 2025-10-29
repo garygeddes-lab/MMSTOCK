@@ -19,7 +19,10 @@
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
-}
+                    }
+                }
+            }
+        }
     </script>
     <style>
         .container-fluid {
@@ -135,8 +138,7 @@
                                 <option value="">Filter by Location</option>
                                 <!-- Options populated by JS -->
                             </select>
-                            <input type="date" id="log-filter-start-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="Start Date">
-<input type="date" id="log-filter-end-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="End Date">
+                            <input type="date" id="log-filter-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
                             <button onclick="applyLogFilters()" class="py-2 px-4 bg-primary-purple text-white rounded-lg hover:bg-primary-purple/90 transition duration-150">Apply Filters</button>
                             <button onclick="exportLog()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Download Log (CSV)</button>
                         </div>
@@ -289,42 +291,547 @@
     </div>
 
     <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc, getDocs, Timestamp, writeBatch, runTransaction, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-/** Ensures Admin Login modal can be toggled */
+        // Global Firebase and App Variables
+        let app;
+        let db;
+        let auth;
+        let userId = 'anonymous'; // Default ID
+        let currentAuthUser = null;
 
-/** Safe Admin Login Modal Controls */
-window.toggleAdminLogin = () => {
-    const modal = document.getElementById('admin-login-modal');
-    const error = document.getElementById('login-error');
-    if (!modal) {
-        console.error('Admin modal not found!');
-        return;
-    }
-    if (modal.classList.contains('hidden')) {
-        modal.classList.remove('hidden');
-        const passwordField = document.getElementById('admin-password');
-        if (passwordField) passwordField.value = '';
-        if (error) error.classList.add('hidden');
-    } else {
-        modal.classList.add('hidden');
-    }
-};
+        // Data Models
+        let locations = []; // { id, name }
+        let items = [];     // { id, name, threshold }
+        let stockLevels = []; // { locationId, itemId, quantity, itemName, locationName }
+        let transactions = []; // Full transaction history for admin log
+        let lowStockComments = {}; // { commentId: { comment, lastUpdate, ... } }
+        
+        // Front-End State
+        let selectedLocationId = null;
+        let removalCart = {}; // { itemId: quantity_to_remove }
+        
+        // Admin State
+        const ADMIN_PASSWORD = 'admin123';
+        let isAdmin = false;
+        let activeAdminTab = 'log';
+        let stockCheckLocationId = null;
 
-window.adminLogin = () => {
-    const password = document.getElementById('admin-password').value.trim();
-    const error = document.getElementById('login-error');
-    if (password === 'admin123') {
-        const modal = document.getElementById('admin-login-modal');
-        if (modal) modal.classList.add('hidden');
-        console.log('Admin logged in successfully.');
-        const adminTabs = document.querySelectorAll('.admin-tab');
-        adminTabs.forEach(tab => tab.classList.remove('hidden'));
-    } else {
-        if (error) error.classList.remove('hidden');
-    }
-};
+        // --- Firebase Configuration and Environment Variables ---
+        
+        // The __app_id and __initial_auth_token are provided by the hosting environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-window.adminLogin = () => {
+        // User-provided Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
+            authDomain: "mmstock-8bcdf.firebaseapp.com",
+            projectId: "mmstock-8bcdf",
+            storageBucket: "mmstock-8bcdf.firebasestorage.app",
+            messagingSenderId: "935228101629",
+            appId: "1:935228101629:web:766421e0da43becc323f94",
+            measurementId: "G-NWJ4Z7ZHT8"
+        };
+
+        // --- Utility Functions ---
+
+        /** Shows a generic modal message */
+        window.showMessageModal = (title, body) => {
+            document.getElementById('message-title').textContent = title;
+            document.getElementById('message-body').innerHTML = body;
+            
+            const modalActions = document.getElementById('modal-actions');
+            modalActions.innerHTML = `
+                <button onclick="closeMessageModal()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150 w-full">Close</button>
+            `;
+            
+            document.getElementById('message-modal').classList.remove('hidden');
+        };
+
+        /** Closes the generic modal message */
+        window.closeMessageModal = () => {
+            document.getElementById('message-modal').classList.add('hidden');
+        };
+
+        /** Converts array of objects to CSV string */
+        const toCSV = (data) => {
+            if (data.length === 0) return '';
+            const header = Object.keys(data[0]).join(',');
+            const rows = data.map(obj => Object.values(obj).map(v => 
+                `"${String(v).replace(/"/g, '""')}"`
+            ).join(','));
+            return [header, ...rows].join('\n');
+        };
+
+        /** Downloads content as a file */
+        const downloadFile = (filename, content, mimeType) => {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        // --- Firebase Initialization and Authentication ---
+
+        const initializeFirebase = async () => {
+            if (!Object.keys(firebaseConfig).length) {
+                console.error("Firebase config is missing or invalid.");
+                return;
+            }
+
+            try {
+                setLogLevel('debug'); // Enable for detailed logs
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Authentication
+                await new Promise((resolve) => {
+                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                        currentAuthUser = user;
+                        if (user) {
+                            userId = user.uid;
+                        } else {
+                            // If no user, sign in anonymously as a fallback for the public data view
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        }
+                        unsubscribe(); // Stop listening after initial auth is resolved
+                        resolve();
+                    });
+                });
+
+                console.log("Firebase Initialized. User ID:", userId);
+                
+                // Start listening to collections
+                setupFirestoreListeners();
+                // Clean up old transactions on initial load
+                cleanUpOldTransactions(); 
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                showMessageModal("Initialization Error", "Failed to connect to the database. Please check console for details.");
+            }
+        };
+
+        // --- Firestore Data Listeners (Real-time Updates) ---
+
+        const setupFirestoreListeners = () => {
+            if (!db || !userId) return;
+
+            // 1. Locations Listener (Private Data)
+            const locationsColRef = collection(db, `/artifacts/${appId}/users/${userId}/locations`);
+            onSnapshot(locationsColRef, (snapshot) => {
+                locations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderLocationButtons();
+                renderAdminSettings();
+                renderAdminLocationFilters();
+                renderAdminLocationSelects();
+                console.log("Locations updated:", locations);
+                // Ensure banner is hidden if no location is selected (e.g., on first load)
+                if (!selectedLocationId) {
+                    document.getElementById('selected-location-banner').classList.add('hidden');
+                }
+            }, (error) => console.error("Error fetching locations:", error));
+
+            // 2. Items Listener (Private Data)
+            const itemsColRef = collection(db, `/artifacts/${appId}/users/${userId}/items`);
+            onSnapshot(itemsColRef, (snapshot) => {
+                items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderAdminSettings();
+                renderAdminItemSelects();
+                renderStockDisplay();
+                checkAndClearLowStockComments(); // Check for clearance when item thresholds might change
+                if (isAdmin) renderLowStockReport();
+                console.log("Items updated:", items);
+            }, (error) => console.error("Error fetching items:", error));
+
+            // 3. Stock Levels Listener (Public Data) - Correct 5-segment path
+            const stockLevelsColRef = collection(db, `/artifacts/${appId}/public/data/stock_levels`);
+            onSnapshot(stockLevelsColRef, (snapshot) => {
+                stockLevels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderStockDisplay();
+                checkAndClearLowStockComments(); // Check for clearance when stock levels change
+                if (isAdmin) renderLowStockReport();
+                console.log("Stock levels updated:", stockLevels.length);
+            }, (error) => console.error("Error fetching stock levels:", error));
+
+            // 4. Transactions Listener (Private Data, Admin only)
+            const transactionsColRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
+            onSnapshot(transactionsColRef, (snapshot) => {
+                transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
+                
+                if (isAdmin) renderTransactionLog();
+                console.log("Transactions updated:", transactions.length);
+            }, (error) => console.error("Error fetching transactions:", error));
+            
+            // 5. Low Stock Comments Listener (Public Data)
+            const commentsRef = collection(db, `/artifacts/${appId}/public/data/low_stock_comments`);
+            onSnapshot(commentsRef, (snapshot) => {
+                lowStockComments = {};
+                snapshot.forEach(doc => lowStockComments[doc.id] = doc.data());
+                // The main clearance check happens when stock levels change (listener 3)
+                if (isAdmin) renderLowStockReport();
+                console.log("Low stock comments updated.");
+            }, (error) => console.error("Error fetching low stock comments:", error));
+        };
+
+        /**
+         * Core logic to automatically delete low stock comments if the stock level 
+         * has recovered (quantity > threshold). This ensures the Admin report clears itself.
+         */
+        const checkAndClearLowStockComments = async () => {
+            if (!db || items.length === 0 || locations.length === 0 || Object.keys(lowStockComments).length === 0) return;
+
+            const commentsToDelete = [];
+            const commentsRef = collection(db, `/artifacts/${appId}/public/data/low_stock_comments`);
+
+            // Check every stock level against its threshold
+            for (const sl of stockLevels) {
+                const item = items.find(i => i.id === sl.itemId);
+                if (!item) continue;
+
+                const commentId = `${sl.locationId}_${sl.itemId}`;
+                
+                // If stock is healthy AND a comment exists
+                if (sl.quantity > item.threshold && lowStockComments[commentId]) {
+                    commentsToDelete.push(commentId);
+                }
+            }
+
+            if (commentsToDelete.length > 0) {
+                console.log(`Clearing ${commentsToDelete.length} low stock comments as stock levels recovered.`);
+                const batch = writeBatch(db);
+                for (const id of commentsToDelete) {
+                    const commentRef = doc(commentsRef, id);
+                    batch.delete(commentRef);
+                }
+                try {
+                    await batch.commit();
+                } catch (error) {
+                    console.error("Batch delete of low stock comments failed:", error);
+                }
+            }
+        };
+
+        /**
+         * Implements the 60-day data retention policy by deleting old transaction records.
+         */
+        const cleanUpOldTransactions = async () => {
+            if (!db || !userId) return;
+
+            // Calculate cutoff date (60 days ago)
+            const sixtyDays = 60 * 24 * 60 * 60 * 1000;
+            const cutoffDate = Timestamp.fromMillis(Date.now() - sixtyDays);
+
+            const transactionsColRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
+            
+            // Query for documents older than 60 days
+            const q = query(transactionsColRef, where('timestamp', '<', cutoffDate));
+            
+            try {
+                const snapshot = await getDocs(q);
+                if (snapshot.empty) {
+                    console.log("No transactions older than 60 days to clean up.");
+                    return;
+                }
+
+                console.log(`Found ${snapshot.docs.length} transactions to delete for retention policy.`);
+                const batch = writeBatch(db);
+                
+                snapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+
+                await batch.commit();
+                console.log("Old transactions successfully cleaned up.");
+            } catch (error) {
+                console.error("Error cleaning up old transactions:", error);
+                // Show a non-blocking message to the console, but not the user
+            }
+        };
+
+
+        // --- Frontend (Staff) Logic ---
+
+        /** Renders location buttons for staff selection */
+        const renderLocationButtons = () => {
+            const container = document.getElementById('location-buttons');
+            container.innerHTML = locations.map(loc => `
+                <button 
+                    onclick="selectLocation('${loc.id}')"
+                    class="loc-button py-2 px-4 rounded-lg font-medium transition duration-150 
+                    ${selectedLocationId === loc.id ? 'bg-primary-purple text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-primary-purple/20'}"
+                    data-location-id="${loc.id}">
+                    ${loc.name}
+                </button>
+            `).join('');
+        };
+
+        /** Sets the currently selected location */
+        window.selectLocation = (locationId) => {
+            selectedLocationId = locationId;
+            removalCart = {}; // Clear cart on location switch
+            renderLocationButtons();
+            renderStockDisplay();
+            renderCart();
+            document.getElementById('stock-message').classList.add('hidden');
+            
+            // --- UX Improvement: Show selected location banner ---
+            const locName = locations.find(l => l.id === locationId)?.name;
+            document.getElementById('current-removal-location').textContent = locName;
+            document.getElementById('selected-location-banner').classList.remove('hidden');
+        };
+
+        /** Renders the main stock level display and action buttons */
+        const renderStockDisplay = () => {
+            const container = document.getElementById('stock-display');
+            if (!selectedLocationId) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const currentLoc = locations.find(loc => loc.id === selectedLocationId);
+            const stockForLocation = stockLevels
+                .filter(sl => sl.locationId === selectedLocationId)
+                .map(sl => {
+                    const item = items.find(i => i.id === sl.itemId);
+                    return item ? { ...sl, itemName: item.name, threshold: item.threshold } : null;
+                })
+                .filter(Boolean); // Filter out items with no definition
+
+            if (stockForLocation.length === 0) {
+                container.innerHTML = `<p class="text-gray-500 italic">No stock data available for ${currentLoc?.name || 'this location'}.</p>`;
+                return;
+            }
+
+            container.innerHTML = stockForLocation.map(stock => {
+                const isLow = stock.quantity <= stock.threshold;
+                const quantityInCart = removalCart[stock.itemId] || 0;
+                const currentQuantity = stock.quantity - quantityInCart;
+                
+                return `
+                    <div class="flex items-center justify-between p-3 border rounded-lg ${isLow ? 'border-red-500 bg-red-50' : 'border-gray-200'}">
+                        <div class="flex flex-col">
+                            <span class="font-semibold text-gray-800">${stock.itemName}</span>
+                            <span class="text-sm ${isLow ? 'text-red-600 font-bold' : 'text-gray-600'}">Available: ${currentQuantity}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-lg font-bold text-primary-purple">${quantityInCart > 0 ? `In Cart: ${quantityInCart}` : ''}</span>
+                            <button onclick="addToCart('${stock.itemId}', '${stock.itemName}', ${stock.quantity})" 
+                                class="py-2 px-4 bg-secondary-teal text-white rounded-lg shadow-sm hover:bg-secondary-teal/90 transition duration-150 disabled:opacity-50"
+                                ${currentQuantity <= 0 ? 'disabled' : ''}>
+                                Remove 1 Item
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        };
+        
+        /** Adds one unit of an item to the removal cart */
+        window.addToCart = (itemId, itemName, currentStock) => {
+            const currentCartQuantity = removalCart[itemId] || 0;
+            if (currentCartQuantity < currentStock) {
+                removalCart[itemId] = currentCartQuantity + 1;
+                renderCart();
+                renderStockDisplay(); // Update display to show reduced available stock
+            } else {
+                showMessageModal("Stock Limit Reached", `You cannot remove more ${itemName} than is currently available (${currentStock} items).`);
+            }
+        };
+
+        /** Renders the current removal cart summary */
+        const renderCart = () => {
+            const cartItems = Object.entries(removalCart)
+                .filter(([, qty]) => qty > 0)
+                .map(([itemId, qty]) => ({ itemId, qty, itemName: items.find(i => i.id === itemId)?.name }));
+
+            const cartList = document.getElementById('checkout-cart-list');
+            const cartSummary = document.getElementById('current-cart');
+            const checkoutButton = document.getElementById('checkout-button');
+            const currentLoc = locations.find(l => l.id === selectedLocationId);
+
+            if (cartItems.length === 0) {
+                cartSummary.innerHTML = '<p class="text-gray-500 italic">No items selected for removal.</p>';
+                checkoutButton.disabled = true;
+            } else {
+                cartSummary.innerHTML = cartItems.map(item => `
+                    <div class="flex justify-between items-center bg-gray-50 p-2 rounded">
+                        <span>${item.itemName} x ${item.qty}</span>
+                        <button onclick="clearItemFromCart('${item.itemId}')" class="text-red-500 hover:text-red-700 text-sm">Clear</button>
+                    </div>
+                `).join('');
+                checkoutButton.disabled = !selectedLocationId;
+            }
+
+            document.getElementById('checkout-location-name').textContent = currentLoc?.name || 'N/A';
+        };
+
+        window.clearItemFromCart = (itemId) => {
+            delete removalCart[itemId];
+            renderCart();
+            renderStockDisplay();
+        };
+
+        /** Opens the checkout modal */
+        window.openCheckoutModal = () => {
+            document.getElementById('checkout-modal').classList.remove('hidden');
+        };
+
+        /** Closes the checkout modal */
+        window.closeCheckoutModal = () => {
+            document.getElementById('checkout-modal').classList.add('hidden');
+        };
+
+        /** * Confirms and records the stock removal transaction.
+         * FIX: Iterate through cart and run a separate, dedicated transaction for each item to reduce contention.
+         */
+        window.confirmRemoval = async () => {
+            const staffName = document.getElementById('staff-name').value.trim();
+            const locationId = selectedLocationId;
+
+            if (!staffName || !locationId) {
+                showMessageModal("Error", "Please enter your name and ensure a location is selected.");
+                return;
+            }
+
+            const itemsToUpdate = Object.entries(removalCart).filter(([, qty]) => qty > 0);
+            if (itemsToUpdate.length === 0) {
+                showMessageModal("Error", "Your cart is empty.");
+                return;
+            }
+
+            closeCheckoutModal();
+            showMessageModal("Processing...", "Recording transaction and updating stock levels. Please wait (processing each item separately for stability).");
+
+            const locName = locations.find(l => l.id === locationId)?.name;
+            
+            let successfulItems = [];
+            let failedItems = [];
+            const logCollectionRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
+
+            // Loop through each item and run a separate, dedicated transaction for maximum stability
+            for (const [itemId, quantityRemoved] of itemsToUpdate) {
+                const itemName = items.find(i => i.id === itemId)?.name;
+                const stockDocId = `${locationId}_${itemId}`;
+                const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
+                
+                let itemSuccess = false;
+                
+                try {
+                    // Transaction 1: Atomically update the stock level for this single item
+                    await runTransaction(db, async (t) => {
+                        const stockSnap = await t.get(stockRef);
+                        
+                        if (!stockSnap.exists()) {
+                            // If stock doc doesn't exist, treat current quantity as 0.
+                            throw new Error(`Item ${itemName} not found in stock (current quantity is 0).`);
+                        }
+                        
+                        const currentQuantity = stockSnap.data().quantity;
+                        const newQuantity = currentQuantity - quantityRemoved;
+                        
+                        if (newQuantity < 0) {
+                            throw new Error(`Insufficient stock for ${itemName}. Only ${currentQuantity} available.`);
+                        }
+                        
+                        // Update Stock Level (WRITE using transaction object t)
+                        t.set(stockRef, { 
+                            locationId, 
+                            itemId, 
+                            quantity: newQuantity 
+                        }, { merge: true });
+                    });
+                    
+                    // After successful stock update, record the transaction log entry (non-atomic with stock update, but highly reliable)
+                    await addDoc(logCollectionRef, {
+                        type: 'removal',
+                        staffName: staffName,
+                        location: locName,
+                        itemId: itemId,
+                        item: itemName,
+                        quantity: -quantityRemoved,
+                        timestamp: Timestamp.now()
+                    });
+
+                    itemSuccess = true;
+                    successfulItems.push(itemName);
+
+                } catch (error) {
+                    failedItems.push({ 
+                        name: itemName, 
+                        message: error.message.includes("Insufficient stock") ? error.message : "Failed due to contention/retry limit." 
+                    });
+                    console.error(`Transaction failed for item ${itemName}: `, error);
+                }
+
+                if (itemSuccess) {
+                    delete removalCart[itemId]; // Remove item from cart if successful
+                }
+            }
+
+            // Report the final result
+            document.getElementById('staff-name').value = '';
+            renderCart();
+            closeMessageModal();
+
+            if (successfulItems.length > 0) {
+                let message = `Successfully removed stock for: **${successfulItems.join(', ')}**.`;
+                
+                if (failedItems.length > 0) {
+                    message += `<br><br><span class="text-red-600 font-bold">WARNING: Failed to remove:</span><ul>`;
+                    failedItems.forEach(f => {
+                         // Find the original quantity that was attempted for the failed item
+                        const failedAttempt = itemsToUpdate.find(([id, ]) => id === items.find(i => i.name === f.name)?.id)?.[1];
+                        message += `<li>${f.name} (Qty: ${failedAttempt}): ${f.message}</li>`;
+                    });
+                    message += `</ul><p class="mt-2 text-sm text-gray-500">The failed items remain in your cart. Please try again.</p>`;
+                    showMessageModal("Partial Success", message);
+                } else {
+                    showMessageModal("Success!", "Stock removal recorded and levels updated for all items.");
+                }
+            } else {
+                // All items failed
+                let message = `All removal attempts failed. Please check current stock levels and try again.`;
+                if (failedItems.length > 0) {
+                    message = `All items failed to update:<ul>`;
+                    failedItems.forEach(f => message += `<li>${f.name}: ${f.message}</li>`);
+                    message += `</ul>`;
+                }
+                showMessageModal("Transaction Failed", message);
+            }
+        };
+
+        // --- Admin Logic ---
+
+        /** Toggles Admin Login Modal visibility */
+        window.toggleAdminLogin = () => {
+            const modal = document.getElementById('admin-login-modal');
+            const error = document.getElementById('login-error');
+            if (modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+                document.getElementById('admin-password').value = '';
+                error.classList.add('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        };
+
+        /** Handles Admin Login authentication (local password check) */
+        window.adminLogin = () => {
             const password = document.getElementById('admin-password').value;
             const error = document.getElementById('login-error');
 
@@ -341,7 +848,8 @@ window.adminLogin = () => {
                 renderLowStockReport();
             } else {
                 error.classList.remove('hidden');
-};
+            }
+        };
 
         /** Handles Admin Logout */
         window.adminLogout = () => {
@@ -495,7 +1003,9 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 showMessageModal("Partial Success", `Transaction deleted. Stock adjustment failed because the stock item was not found.`);
             } else {
                 showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
-};
+            }
+        }
+    };
 
     // Create and show the confirmation modal
     document.getElementById('message-title').textContent = "Confirm Transaction Deletion";
@@ -511,27 +1021,24 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
 };
 
         window.applyLogFilters = () => {
-    const staffFilter = document.getElementById('log-filter-staff').value.toLowerCase();
-    const locationFilter = document.getElementById('log-filter-location').value;
-    const startDateFilter = document.getElementById('log-filter-start-date').value;
-    const endDateFilter = document.getElementById('log-filter-end-date').value;
+            const staffFilter = document.getElementById('log-filter-staff').value.toLowerCase();
+            const locationFilter = document.getElementById('log-filter-location').value;
+            const dateFilter = document.getElementById('log-filter-date').value;
 
-    const filtered = transactions.filter(t => {
-        const staffMatch = staffFilter ? (t.staffName || '').toLowerCase().includes(staffFilter) : true;
-        const locationMatch = locationFilter ? t.location === locationFilter : true;
-        let dateMatch = true;
+            const filtered = transactions.filter(t => {
+                const staffMatch = staffFilter ? (t.staffName || '').toLowerCase().includes(staffFilter) : true;
+                const locationMatch = locationFilter ? t.location === locationFilter : true;
+                
+                let dateMatch = true;
+                if (dateFilter && t.timestamp) {
+                    const transactionDate = new Date(t.timestamp.seconds * 1000).toISOString().split('T')[0];
+                    dateMatch = transactionDate === dateFilter;
+                }
 
-        if ((startDateFilter || endDateFilter) && t.timestamp) {
-            const transactionDate = new Date(t.timestamp.seconds * 1000);
-            const startDate = startDateFilter ? new Date(startDateFilter) : new Date(0);
-            const endDate = endDateFilter ? new Date(endDateFilter) : new Date();
-            dateMatch = transactionDate >= startDate && transactionDate <= new Date(endDate.getTime() + 86400000 - 1);
-        }
-        return staffMatch && locationMatch && dateMatch;
-    });
+                return staffMatch && locationMatch && dateMatch;
+            });
 
-    renderTransactionLog(filtered);
-};
+            renderTransactionLog(filtered);
         };
         
         /** Exports the currently visible transaction log to CSV */
@@ -619,7 +1126,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                                 </div>
                             </div>
                         `;
-}
+                    }
+                }
 
                 if (lowItemsInLoc) {
                     reportHTML += `
@@ -630,13 +1138,15 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                             </div>
                         </div>
                     `;
-}
+                }
+            }
 
             if (!lowStockFound) {
                 container.innerHTML = '<p class="text-green-600 font-semibold mt-4">All stock levels are currently above minimum thresholds at all sites. Good job!</p>';
             } else {
                 container.innerHTML = reportHTML;
-};
+            }
+        };
 
         /** Saves a comment on a low stock item for a specific location (Public Data) - Correct 5-segment path */
         window.saveLowStockComment = async (locationId, itemId) => {
@@ -664,7 +1174,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             } catch (error) {
                 console.error("Error saving comment:", error);
                 showMessageModal("Error", "Failed to save comment. See console for details.");
-};
+            }
+        };
 
         // --- Admin: Stock Check/Count ---
         
@@ -683,7 +1194,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             
             if (stockCheckLocationId) {
                 renderStockCheckForm(stockCheckLocationId);
-}
+            }
+        }
 
         window.selectStockCheckLocation = (locationId) => {
             stockCheckLocationId = locationId;
@@ -755,7 +1267,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                         change: newCount - currentQuantity
                     });
                     hasChanges = true;
-});
+                }
+            });
 
             if (!hasChanges) {
                 showMessageModal("No Changes", "The entered counts match the current recorded stock. No update necessary.");
@@ -799,7 +1312,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 console.error("Stock Check Adjustment failed:", error);
                 closeMessageModal();
                 showMessageModal("Error", "Failed to update stock levels. See console for details.");
-};
+            }
+        };
 
         // --- Admin: Mass Stock Update ---
 
@@ -897,7 +1411,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 console.error("Mass update failed:", error);
                 closeMessageModal();
                 showMessageModal("Mass Update Failed", error.message || "An unexpected error occurred during the mass update.");
-};
+            }
+        };
 
         // --- Admin: Settings (CRUD) ---
 
@@ -946,7 +1461,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             } catch (error) {
                 console.error("Error adding item:", error);
                 showMessageModal("Error", "Failed to add item.");
-};
+            }
+        };
 
         /** Updates the minimum stock threshold for an item (Private Data) */
         window.updateItemThreshold = async (itemId) => {
@@ -966,7 +1482,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             } catch (error) {
                 console.error("Error updating threshold:", error);
                 showMessageModal("Error", "Failed to update threshold.");
-};
+            }
+        };
 
         /** Removes a stock item (Private Data) */
         window.removeItem = async (itemId, itemName) => {
@@ -980,7 +1497,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                     console.error("Error removing item:", error);
                     closeMessageModal();
                     showMessageModal("Error", "Failed to remove item.");
-};
+                }
+            };
 
             document.getElementById('message-title').textContent = "Confirm Item Deletion";
             document.getElementById('message-body').innerHTML = `<p class="text-gray-700">Are you sure you want to remove the stock item: <strong>${itemName}</strong>? This will not remove existing stock levels.</p>`;
@@ -1011,7 +1529,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             } catch (error) {
                 console.error("Error adding location:", error);
                 showMessageModal("Error", "Failed to add location.");
-};
+            }
+        };
 
         /** Removes a location (Private Data) */
         window.removeLocation = async (locationId, locationName) => {
@@ -1025,7 +1544,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                     console.error("Error removing location:", error);
                     closeMessageModal();
                     showMessageModal("Error", "Failed to remove location.");
-};
+                }
+            };
             
             document.getElementById('message-title').textContent = "Confirm Location Deletion";
             document.getElementById('message-body').innerHTML = `<p class="text-red-600 font-bold mb-2">WARNING: Removing ${locationName}?</p><p class="text-gray-700">This will not delete existing stock or transactions associated with this location.</p>`;
@@ -1047,40 +1567,8 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
         window.addToCart = addToCart;
         window.clearItemFromCart = clearItemFromCart;
         window.confirmRemoval = confirmRemoval;
-        
-/** Safe Admin Login Modal Controls */
-window.toggleAdminLogin = () => {
-    const modal = document.getElementById('admin-login-modal');
-    const error = document.getElementById('login-error');
-    if (!modal) {
-        console.error('Admin modal not found!');
-        return;
-    }
-    if (modal.classList.contains('hidden')) {
-        modal.classList.remove('hidden');
-        const passwordField = document.getElementById('admin-password');
-        if (passwordField) passwordField.value = '';
-        if (error) error.classList.add('hidden');
-    } else {
-        modal.classList.add('hidden');
-    }
-};
-
-window.adminLogin = () => {
-    const password = document.getElementById('admin-password').value.trim();
-    const error = document.getElementById('login-error');
-    if (password === 'admin123') {
-        const modal = document.getElementById('admin-login-modal');
-        if (modal) modal.classList.add('hidden');
-        console.log('Admin logged in successfully.');
-        const adminTabs = document.querySelectorAll('.admin-tab');
-        adminTabs.forEach(tab => tab.classList.remove('hidden'));
-    } else {
-        if (error) error.classList.remove('hidden');
-    }
-};
-
-window.adminLogin = adminLogin;
+        window.toggleAdminLogin = toggleAdminLogin;
+        window.adminLogin = adminLogin;
         window.adminLogout = adminLogout;
         window.showAdminTab = showAdminTab;
         window.applyLogFilters = applyLogFilters;
