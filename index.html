@@ -4,114 +4,292 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mitchell & Murdoch Stock Control</title>
-    <!-- Tailwind CSS CDN -->
+    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Inter Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Use Inter font family -->
     <style>
-        :root { font-family: 'Inter', sans-serif; }
-        .tab-active { @apply border-b-2 border-indigo-600 text-indigo-600; }
-        #app-container { min-height: 100vh; }
+        body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
-<body class="bg-gray-50">
-    <div id="app-container" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-        <!-- Application will be rendered here -->
+<body class="bg-gray-50 min-h-screen">
+
+    <div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 transition-opacity duration-300">
+        <div class="flex flex-col items-center">
+            <svg class="animate-spin -ml-1 mr-3 h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-4 text-white text-lg font-medium">Loading Stock Data and Connecting to Database...</p>
+        </div>
     </div>
 
-    <!-- Firebase Imports -->
+    <div id="app" class="max-w-7xl mx-auto p-4 md:p-8" style="display: none;">
+        <header class="mb-6 pb-4 border-b border-gray-200 flex justify-between items-center">
+            <h1 class="text-3xl font-extrabold text-gray-900">Mitchell & Murdoch Stock Control</h1>
+            <div class="flex items-center space-x-4">
+                <button id="admin-login-btn" class="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow-md hover:bg-indigo-700 transition duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500">Admin Login</button>
+            </div>
+        </header>
+
+        <!-- Site Selection for Staff View -->
+        <section id="site-selection" class="mb-6 bg-white p-4 rounded-xl shadow-lg">
+            <h2 class="text-xl font-semibold text-gray-700 mb-3">Operating Site: <span id="current-site-display" class="font-bold text-indigo-600">Please Select</span></h2>
+            <div class="flex flex-wrap gap-3">
+                <!-- Buttons will be dynamically added here -->
+            </div>
+        </section>
+
+        <!-- Main Stock Display / Staff View -->
+        <section id="staff-view" class="mb-8">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Current Stock Levels</h2>
+            <div id="stock-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Stock item cards will be inserted here -->
+            </div>
+        </section>
+
+        <!-- Admin Dashboard Section (Hidden by Default) -->
+        <section id="admin-dashboard" class="hidden">
+            <div class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold text-indigo-600 mb-6 border-b pb-3">Admin Dashboard</h2>
+                
+                <!-- Admin Tab Navigation -->
+                <div class="flex border-b mb-6">
+                    <button data-tab="low-stock" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Low Stock Review</button>
+                    <button data-tab="mass-update" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Mass Stock Update</button>
+                    <button data-tab="single-update" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Single Item Update</button>
+                    <button data-tab="item-management" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Item Management</button>
+                    <button data-tab="transactions" class="admin-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition duration-150">Transaction Log</button>
+                </div>
+
+                <!-- Admin Tab Content Area -->
+                <div id="admin-tab-content">
+                    <!-- Low Stock Review Tab -->
+                    <div data-tab-content="low-stock" class="admin-content-tab hidden">
+                        <h3 class="text-xl font-semibold mb-4 text-red-600">🚨 Low Stock Alerts</h3>
+                        <p class="mb-4 text-gray-600">The items below are currently at or below their pre-defined threshold across all sites.</p>
+                        <div id="low-stock-list" class="space-y-3">
+                            <!-- Low stock items will be loaded here -->
+                            <p class="text-gray-500">Loading low stock data...</p>
+                        </div>
+                    </div>
+
+                    <!-- Mass Stock Update Tab -->
+                    <div data-tab-content="mass-update" class="admin-content-tab hidden">
+                        <h3 class="text-xl font-semibold mb-4">Mass Stock Update (Global or Site-Specific)</h3>
+                        <p class="mb-6 text-gray-600">Apply a single stock addition (+) or reduction (-) across all sites, or select a specific site.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
+                            <div>
+                                <label for="mass-update-site-select" class="block text-sm font-medium text-gray-700">Select Target Site</label>
+                                <select id="mass-update-site-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                                    <!-- Options populated by JavaScript -->
+                                </select>
+                            </div>
+                            <div>
+                                <label for="mass-update-item-select" class="block text-sm font-medium text-gray-700">Select Item</label>
+                                <select id="mass-update-item-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                                    <!-- Options populated by JavaScript -->
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-6 flex items-end space-x-3">
+                            <div class="flex-grow">
+                                <label for="mass-update-quantity" class="block text-sm font-medium text-gray-700">Quantity Change (+/-)</label>
+                                <input type="number" id="mass-update-quantity" placeholder="e.g. 50 (to add) or -10 (to remove)" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5">
+                            </div>
+                            <button id="confirm-mass-update-btn" class="px-6 py-2.5 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-150">Apply Mass Update</button>
+                        </div>
+                        <p id="mass-update-message" class="mt-4 text-sm font-medium hidden"></p>
+                    </div>
+
+                    <!-- Single Item Update Tab -->
+                    <div data-tab-content="single-update" class="admin-content-tab hidden">
+                        <h3 class="text-xl font-semibold mb-4">Single Item Update (Site-Specific)</h3>
+                        <p class="mb-6 text-gray-600">Manually set a new exact stock level for an item at one specific location. (e.g., set Gloves-M in Perth to 200).</p>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg">
+                            <div>
+                                <label for="single-update-site-select" class="block text-sm font-medium text-gray-700">Select Site</label>
+                                <select id="single-update-site-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                                    <!-- Options populated by JavaScript -->
+                                </select>
+                            </div>
+                            <div>
+                                <label for="single-update-item-select" class="block text-sm font-medium text-gray-700">Select Item</label>
+                                <select id="single-update-item-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                                    <!-- Options populated by JavaScript -->
+                                </select>
+                            </div>
+                            <div>
+                                <label for="single-update-new-stock" class="block text-sm font-medium text-gray-700">New Exact Stock Level</label>
+                                <input type="number" id="single-update-new-stock" placeholder="e.g. 200" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5">
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <button id="confirm-single-update-btn" class="px-6 py-2.5 bg-yellow-600 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-700 transition duration-150">Set New Stock Level</button>
+                        </div>
+                        <p id="single-update-message" class="mt-4 text-sm font-medium hidden"></p>
+                    </div>
+
+                    <!-- Item Management Tab -->
+                    <div data-tab-content="item-management" class="admin-content-tab hidden">
+                        <h3 class="text-xl font-semibold mb-4">Product Management</h3>
+                        <p class="mb-6 text-gray-600">Add new product types or permanently remove existing ones from the system.</p>
+                        
+                        <!-- Add New Item Form -->
+                        <div class="bg-indigo-50 p-4 rounded-lg mb-6">
+                            <h4 class="font-bold text-lg mb-3 text-indigo-700">➕ Add New Item Type</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <input type="text" id="new-item-name" placeholder="New Item Name (e.g., Nitrile Gloves)" class="col-span-1 md:col-span-2 rounded-md border-gray-300 shadow-sm p-2.5" maxlength="50">
+                                <input type="number" id="new-item-threshold" placeholder="Low Stock Threshold (e.g., 25)" class="rounded-md border-gray-300 shadow-sm p-2.5" min="0">
+                            </div>
+                            <button id="add-new-item-btn" class="mt-4 px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-150">Create New Item</button>
+                            <p id="add-item-message" class="mt-2 text-sm font-medium hidden"></p>
+                        </div>
+
+                        <!-- Delete Item List -->
+                        <div class="bg-red-50 p-4 rounded-lg">
+                            <h4 class="font-bold text-lg mb-3 text-red-700">🗑️ Delete Existing Item</h4>
+                            <p class="text-sm text-red-600 mb-4">Deleting an item removes all stock levels and transaction history for it. This action cannot be undone.</p>
+                            <select id="delete-item-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm rounded-md shadow-sm">
+                                <!-- Options populated by JavaScript -->
+                            </select>
+                            <button id="delete-item-btn" class="mt-4 px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition duration-150">Permanently Delete Item</button>
+                            <p id="delete-item-message" class="mt-2 text-sm font-medium hidden"></p>
+                        </div>
+                    </div>
+
+                    <!-- Transaction Log Tab -->
+                    <div data-tab-content="transactions" class="admin-content-tab hidden">
+                        <h3 class="text-xl font-semibold mb-4">Transaction History</h3>
+                        <p class="mb-4 text-gray-600">Full log of all stock changes across all sites.</p>
+                        <div id="transaction-log" class="overflow-x-auto bg-white rounded-lg shadow-md">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Change</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transactions-body" class="bg-white divide-y divide-gray-200">
+                                    <!-- Transactions loaded here -->
+                                </tbody>
+                            </table>
+                            <p id="no-transactions-message" class="p-6 text-gray-500 text-center hidden">No transactions recorded yet.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Floating Cart Button -->
+    <button id="cart-button" class="fixed bottom-6 right-6 p-4 bg-indigo-600 text-white font-bold rounded-full shadow-2xl hover:bg-indigo-700 transition duration-150 transform hover:scale-105 hidden" style="min-width: 150px;">
+        Remove Items (0)
+    </button>
+
+    <!-- Modal for Cart Confirmation / Admin Login / Generic Message -->
+    <div id="modal-backdrop" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center z-40">
+        <div id="main-modal" class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md transform scale-100 transition-all duration-300">
+            <!-- Modal Content will be inserted here by JS -->
+        </div>
+    </div>
+
+    <!-- JavaScript Section -->
     <script type="module">
+        // --- FIREBASE IMPORTS ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, collection, onSnapshot, setDoc, updateDoc, increment, deleteDoc, query, where, addDoc, serverTimestamp, getDocs, runTransaction, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, runTransaction, getDocs, limit, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 
-        // IMPORTANT: Global variables provided by the environment
-        // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
-  authDomain: "mmstock-8bcdf.firebaseapp.com",
-  projectId: "mmstock-8bcdf",
-  storageBucket: "mmstock-8bcdf.firebasestorage.app",
-  messagingSenderId: "935228101629",
-  appId: "1:935228101629:web:766421e0da43becc323f94",
-  measurementId: "G-NWJ4Z7ZHT8"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+        // --- 1. FIREBASE CONFIGURATION (LIVE DEPLOYMENT READY) ---
+        // This is YOUR UNIQUE configuration for mmstock-8bcdf.firebaseapp.com
+        // This section REPLACES the need for the __global_variables from the Canvas.
+        const LIVE_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
+            authDomain: "mmstock-8bcdf.firebaseapp.com",
+            projectId: "mmstock-8bcdf",
+            storageBucket: "mmstock-8bcdf.firebasestorage.app",
+            messagingSenderId: "935228101629",
+            appId: "1:935228101629:web:766421e0da43becc323f94",
+            measurementId: "G-NWJ4Z7ZHT8"
+        };
         
-        // --- ADMIN CONFIGURATION (Simple Password) ---
+        // We use the Firebase Project ID as the App ID for our public data paths (Security Rules)
+        const appId = LIVE_FIREBASE_CONFIG.projectId; 
+        
+        // --- 2. ADMIN CONFIGURATION ---
         const ADMIN_PASSWORD = 'admin'; // Hardcoded password for quick access
-        // ---------------------------------------------
-
+        const SITE_LOCATIONS = ['Dundee', 'Perth', 'Fife', 'Aberdeen', 'Glasgow'];
+        const DEFAULT_ITEMS = [
+            { name: 'Gloves-Medium', threshold: 25 },
+            { name: 'Safety Glasses', threshold: 50 },
+            { name: 'Hard Hats-White', threshold: 10 },
+            { name: 'Dust Masks-N95', threshold: 100 },
+        ];
+        
+        // --- 3. GLOBAL STATE & FIREBASE INSTANCES ---
         let app, db, auth;
         let userId = 'loading...';
         let isAuthReady = false;
+        let isAdmin = false;
 
-        // Application State
-        let LOCATIONS = ['Dundee', 'Perth', 'Fife', 'Falkirk', 'Aberdeen']; 
-        let stockLevels = {}; 
-        let transactions = [];
-        let view = 'staff'; // 'staff' or 'admin'
-        let currentLocation = null; 
-        let adminTab = 'lowStockReview'; // Default admin tab
-        let issueQueue = {}; 
-        let filterState = {
-            itemName: '',
-            location: '',
-            type: '',
-            staffName: '',
-            startDate: '', 
-            endDate: ''    
+        let currentSite = null;
+        let stockData = {}; // Stores all stock levels: {itemId: {Dundee: 100, Perth: 50, ...}}
+        let itemNames = {}; // Stores all item metadata: {itemId: {name: 'Gloves-M', threshold: 25}}
+        let itemCart = {}; // Stores items being removed: {itemId: count}
+
+        // --- 4. FIREBASE REFERENCE HELPERS ---
+        const getStockLevelsRef = () => collection(db, `/artifacts/${appId}/public/data/stock_levels`);
+        const getItemsRef = () => collection(db, `/artifacts/${appId}/public/data/items`);
+        const getTransactionsRef = () => collection(db, `/artifacts/${appId}/public/data/stock_transactions`);
+
+        // --- 5. UTILITY FUNCTIONS ---
+        const showLoading = (show) => {
+            const loadingOverlay = document.getElementById('loading-overlay');
+            loadingOverlay.style.opacity = show ? '1' : '0';
+            loadingOverlay.style.display = show ? 'flex' : 'none';
+            document.getElementById('app').style.display = show ? 'none' : 'block';
         };
-        const TRANSACTION_TYPES = ['REMOVE', 'MASS_REMOVE', 'MASS_ADD', 'CART_ISSUE']; 
 
-        // --- Utility Functions ---
-
-        const formatTimestamp = (timestamp) => {
-            if (!timestamp) return 'N/A';
-            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-            return date.toLocaleDateString('en-GB', {
-                year: 'numeric', month: 'short', day: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-            });
+        const showModal = (contentHTML) => {
+            document.getElementById('main-modal').innerHTML = contentHTML;
+            document.getElementById('modal-backdrop').classList.remove('hidden');
+            document.getElementById('modal-backdrop').classList.add('flex');
         };
-        
-        // --- Firebase Initialization and Authentication ---
+
+        const hideModal = () => {
+            document.getElementById('modal-backdrop').classList.add('hidden');
+            document.getElementById('modal-backdrop').classList.remove('flex');
+        };
+
+        // --- 6. AUTHENTICATION AND INITIALIZATION ---
 
         const initFirebase = async () => {
-            if (!firebaseConfig) {
-                console.error("Firebase config is not available.");
-                document.getElementById('app-container').innerHTML = '<div class="text-red-500 p-8">Error: Firebase configuration is missing.</div>';
-                return;
-            }
-
+            showLoading(true);
             try {
-                // setLogLevel('debug'); 
-                app = initializeApp(firebaseConfig);
+                // setLogLevel('debug'); // Uncomment for console debugging
+                
+                // 1. Initialize with your live config
+                app = initializeApp(LIVE_FIREBASE_CONFIG);
                 db = getFirestore(app);
                 auth = getAuth(app);
+                
+                // 2. Sign in anonymously (Used for all staff users)
+                await signInAnonymously(auth);
 
+                // 3. Wait for auth state to stabilize
                 await new Promise(resolve => {
                     const unsubscribe = onAuthStateChanged(auth, async (user) => {
                         if (user) {
                             userId = user.uid;
                         } else {
-                            if (initialAuthToken) {
-                                await signInWithCustomToken(auth, initialAuthToken);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
+                            // Re-sign in if necessary
+                            await signInAnonymously(auth);
                             userId = auth.currentUser.uid;
                         }
                         isAuthReady = true;
@@ -121,1229 +299,757 @@ const analytics = getAnalytics(app);
                 });
 
                 console.log(`Firebase Initialized. User ID: ${userId}`);
-                setupListeners();
-                await seedInitialData(); 
+                
+                // 4. Setup listeners and check data
+                await seedInitialData();
+                setupListeners(); 
+                
             } catch (error) {
-                console.error("Error during Firebase initialization or sign-in:", error);
-                document.getElementById('app-container').innerHTML = `<div class="text-red-500 p-8">Authentication Error: ${error.message}</div>`;
+                console.error("Firebase Initialization Error:", error);
+                showModal(`<h3 class="text-xl font-bold text-red-600 mb-4">Connection Error</h3><p>Could not connect to the database. Check your Firebase Configuration (LIVE_FIREBASE_CONFIG) and ensure Anonymous Auth is enabled. Error: ${error.message}</p><button onclick="hideModal()" class="mt-4 px-4 py-2 bg-gray-500 text-white rounded-lg">Close</button>`);
+            } finally {
+                showLoading(false);
             }
         };
-        
-        // --- Data Seeding Function ---
+
+        // --- 7. DATA SEEDING (Ensures initial items and sites exist) ---
+
         const seedInitialData = async () => {
-            try {
-                // Seed Stock Data
-                const stockRef = getStockLevelsRef();
-                let snapshot = await getDocs(stockRef);
-                if (snapshot.empty) {
-                    const initialStock = [
-                        { id: 'Gloves-Medium', Dundee: 150, Perth: 80, Fife: 40, Falkirk: 120, Aberdeen: 200, threshold: 25 },
-                        { id: 'Aprons-Standard', Dundee: 10, Perth: 50, Fife: 15, Falkirk: 70, Aberdeen: 150, threshold: 30 },
-                        { id: 'Hand Sanitizer (L)', Dundee: 60, Perth: 20, Fife: 5, Falkirk: 30, Aberdeen: 80, threshold: 15 },
-                        { id: 'Safety Glasses', Dundee: 5, Perth: 10, Fife: 100, Falkirk: 150, Aberdeen: 50, threshold: 10 },
-                    ];
-                    for (const item of initialStock) {
-                        const { id, ...data } = item;
-                        await setDoc(doc(stockRef, id), data);
-                    }
-                    console.log("Initial stock data seeded.");
-                } else {
-                    // Check LOCATIONS based on existing data
-                    const doc = snapshot.docs[0];
-                    if (doc) {
-                        const data = doc.data();
-                        const existingLocations = Object.keys(data).filter(key => key !== 'threshold' && key !== 'id').sort();
-                        if(existingLocations.length > 0) {
-                            LOCATIONS = existingLocations;
-                        }
-                    }
+            const stockRef = getStockLevelsRef();
+            const itemsRef = getItemsRef();
+            
+            // Check if items collection has any documents
+            const itemDocs = await getDocs(itemsRef);
+            if (itemDocs.empty) {
+                console.log("Seeding initial items...");
+
+                for (const item of DEFAULT_ITEMS) {
+                    const itemDocRef = doc(itemsRef, item.name); // Use name as doc ID for simplicity
+                    await setDoc(itemDocRef, { 
+                        name: item.name, 
+                        threshold: item.threshold,
+                        createdAt: new Date().toISOString()
+                    });
                 }
-            } catch (e) {
-                console.error("Error seeding initial data:", e);
+
+                // Initialize stock for all new items at all sites (set to 0)
+                const siteDocs = await getDocs(stockRef);
+                for (const site of SITE_LOCATIONS) {
+                     const siteDocRef = doc(stockRef, site);
+                     const siteData = {};
+                     DEFAULT_ITEMS.forEach(item => {
+                         siteData[item.name] = 0;
+                     });
+                     await setDoc(siteDocRef, siteData, { merge: true });
+                }
+            } else {
+                console.log("Items collection already exists.");
             }
         };
 
-        // --- Firestore Listeners ---
-
-        const getStockLevelsRef = () => collection(db, `/artifacts/${appId}/public/data/stock_levels`);
-        const getTransactionsRef = () => collection(db, `/artifacts/${appId}/public/data/stock_transactions`);
+        // --- 8. REAL-TIME LISTENERS ---
 
         const setupListeners = () => {
-            if (!db || !isAuthReady) return;
-
-            // 1. Stock Levels Listener
-            onSnapshot(getStockLevelsRef(), (snapshot) => {
-                const newStockLevels = {};
-                let hasStockData = false;
+            // 1. Listen for Item Metadata Changes
+            onSnapshot(getItemsRef(), (snapshot) => {
+                itemNames = {};
                 snapshot.forEach(doc => {
-                    newStockLevels[doc.id] = { id: doc.id, ...doc.data() };
-                    hasStockData = true;
+                    itemNames[doc.id] = doc.data();
                 });
-                stockLevels = newStockLevels;
+                renderAdminSelects();
+            }, (error) => console.error("Error listening to items:", error));
 
-                if (hasStockData) {
-                    const firstDocId = Object.keys(stockLevels)[0];
-                    const firstDoc = stockLevels[firstDocId];
-                    // Recalculate LOCATIONS based on the first item's properties
-                    const newLocations = Object.keys(firstDoc).filter(key => key !== 'threshold' && key !== 'id').sort();
-                    
-                    if (newLocations.length > 0 && JSON.stringify(LOCATIONS) !== JSON.stringify(newLocations)) {
-                        LOCATIONS = newLocations;
-                        if (currentLocation && !LOCATIONS.includes(currentLocation)) {
-                            currentLocation = null; // Reset location if the selected one was removed
-                        }
-                    }
-                }
+            // 2. Listen for Stock Level Changes
+            onSnapshot(getStockLevelsRef(), (snapshot) => {
+                stockData = {};
+                snapshot.forEach(doc => {
+                    stockData[doc.id] = doc.data();
+                });
+                renderSiteButtons();
+                renderStockList();
+                renderLowStockReview();
+            }, (error) => console.error("Error listening to stock:", error));
 
-                renderApp();
-                // Special render for Mass Update tab to refresh display
-                if (view === 'admin' && adminTab === 'massUpdate') {
-                    const selectedItem = document.getElementById('mass-item')?.value;
-                    if (selectedItem) {
-                        window.updateMassUpdateStockDisplay(selectedItem);
-                    }
-                }
-            }, (error) => console.error("Error listening to stock levels:", error));
-
-            // 2. Transactions Listener
-            onSnapshot(getTransactionsRef(), (snapshot) => {
-                transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-                                           .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-                if (view === 'admin' || view === 'staff') renderApp(); 
+            // 3. Listen for Transaction Changes (Admin Log)
+            onSnapshot(query(getTransactionsRef(), orderBy('timestamp', 'desc'), limit(50)), (snapshot) => {
+                renderTransactionLog(snapshot.docs.map(doc => doc.data()));
             }, (error) => console.error("Error listening to transactions:", error));
         };
 
-        // --- Firestore Operations ---
+        // --- 9. RENDER FUNCTIONS ---
 
-        const saveTransaction = async (data) => {
-            try {
-                await addDoc(getTransactionsRef(), {
-                    ...data,
-                    timestamp: serverTimestamp(),
-                    userId: userId,
-                });
-            } catch (e) {
-                console.error("Error recording transaction:", e);
-                showModal('Error', `Failed to log transaction: ${e.message}`, 'error');
-            }
+        const renderSiteButtons = () => {
+            const container = document.querySelector('#site-selection .flex');
+            container.innerHTML = '';
+            SITE_LOCATIONS.forEach(site => {
+                const btn = document.createElement('button');
+                btn.textContent = site;
+                btn.className = `site-btn px-4 py-2 font-medium rounded-lg transition duration-150 ${currentSite === site ? 'bg-indigo-700 text-white shadow-lg' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`;
+                btn.onclick = () => setCurrentSite(site);
+                container.appendChild(btn);
+            });
         };
 
-        const handleStockUpdate = async (itemName, location, quantityChange, staffName, type) => {
-            const stockDocRef = doc(getStockLevelsRef(), itemName);
+        const renderStockList = () => {
+            const list = document.getElementById('stock-list');
+            list.innerHTML = '';
+            const items = Object.values(itemNames).sort((a, b) => a.name.localeCompare(b.name));
 
-            try {
+            if (items.length === 0) {
+                list.innerHTML = '<p class="text-gray-500 col-span-full">No stock items are currently defined in the system.</p>';
+                return;
+            }
+
+            items.forEach(item => {
+                const itemId = item.name;
+                const stock = currentSite ? (stockData[currentSite] ? stockData[currentSite][itemId] || 0 : 0) : '---';
+                const isLow = currentSite && stock <= item.threshold;
+                const lowStockClass = isLow ? 'bg-red-100 border-red-500' : 'bg-white border-gray-200';
                 
-                await runTransaction(db, async (transaction) => {
-                    const stockDoc = await transaction.get(stockDocRef);
-
-                    if (!stockDoc.exists()) {
-                        throw new Error("Stock item not found.");
-                    }
-
-                    const currentLevels = stockDoc.data();
-                    const currentLevelAtLocation = currentLevels[location] || 0;
-
-                    const newLevel = currentLevelAtLocation + quantityChange;
-
-                    if ((type === 'REMOVE' || type === 'MASS_REMOVE' || type === 'CART_ISSUE') && newLevel < 0) {
-                        throw new Error(`Insufficient stock for ${itemName}. Only ${currentLevelAtLocation} in stock at ${location}.`);
-                    }
-
-                    transaction.update(stockDocRef, {
-                        [location]: increment(quantityChange)
-                    });
-                });
-
-                await saveTransaction({ itemName, location, quantityChange, staffName, type });
-                return { success: true, message: `${Math.abs(quantityChange)} unit(s) of ${itemName} ${quantityChange > 0 ? 'added to' : 'removed from'} ${location}.` };
-
-            } catch (e) {
-                console.error("Transaction failed:", e);
-                return { success: false, message: e.message };
-            }
-        };
-        
-        // --- Admin Authentication Logic (Simplified) ---
-
-        window.handleAdminLogin = (e) => {
-            e.preventDefault();
-            const passwordInput = document.getElementById('admin-password').value;
-            
-            if (passwordInput === ADMIN_PASSWORD) {
-                view = 'admin';
-                window.closeModal();
-                renderApp();
-            } else {
-                showModal('Login Failed', 'The password you entered is incorrect.', 'error');
-            }
-        };
-
-        window.handleAdminLogout = () => {
-            view = 'staff';
-            adminTab = 'lowStockReview';
-            renderApp();
-            showModal('Logged Out', 'You have been logged out of the admin panel.', 'info');
-        };
-
-        window.showAdminLogin = () => {
-            showModal('Admin Login', `
-                <form onsubmit="window.handleAdminLogin(event)" class="space-y-4">
-                    <p class="text-sm text-gray-600">Enter the admin password to access the management dashboard.</p>
-                    <div>
-                        <label for="admin-password" class="block text-sm font-medium text-gray-700">Password</label>
-                        <input type="password" id="admin-password" required 
-                               class="mt-1 block w-full p-3 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500" 
-                               placeholder="Admin Password (Hint: ${ADMIN_PASSWORD})">
-                    </div>
-                    <button type="submit" class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition-colors">
-                        <i data-lucide="lock" class="w-5 h-5 mr-1 inline"></i> Login
-                    </button>
-                </form>
-            `, 'info', false);
-        };
-
-        // --- Core UI Functions ---
-
-        const renderApp = () => {
-            const container = document.getElementById('app-container');
-            
-            // Get the display name for the admin bar
-            const adminDisplay = view === 'admin' ? 'Admin Panel' : 'Staff View';
-
-            container.innerHTML = `
-                <header class="mb-8">
-                    <h1 class="text-3xl font-bold text-indigo-700">Mitchell & Murdoch Stock Control</h1>
-                    <p class="text-sm text-gray-500">User ID: ${userId} | ${adminDisplay}</p>
-                    
-                    <div class="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between">
-                        <!-- View Toggles -->
-                        <div class="flex space-x-4 mb-3 sm:mb-0">
-                            <button onclick="window.setView('staff')" class="px-4 py-2 font-medium rounded-lg transition-colors ${view === 'staff' ? 'bg-indigo-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}">Staff View</button>
-                            ${view === 'admin' ? `
-                                <button onclick="window.handleAdminLogout()" class="px-4 py-2 font-medium rounded-lg transition-colors bg-red-600 text-white hover:bg-red-700">
-                                    <i data-lucide="log-out" class="w-4 h-4 mr-1 inline"></i> Logout
-                                </button>
-                            ` : `
-                                <button onclick="window.showAdminLogin()" class="px-4 py-2 font-medium rounded-lg transition-colors bg-gray-200 text-red-700 hover:bg-gray-300">
-                                    Admin Login
-                                </button>
-                            `}
-                        </div>
-                        
-                        <!-- Site Selector Buttons (Only in Staff View) -->
-                        ${view === 'staff' && LOCATIONS.length > 0 ? `
-                            <div class="mt-4 sm:mt-0 flex items-center space-x-2 w-full sm:w-auto overflow-x-auto pb-1">
-                                <span class="text-sm font-medium text-gray-700 whitespace-nowrap hidden md:block">Select Site:</span>
-                                <div class="flex flex-wrap gap-2">
-                                    ${LOCATIONS.map(loc => `
-                                        <button onclick="window.setLocationView('${loc}')" 
-                                                class="px-3 py-1 text-sm font-medium rounded-lg transition-colors shadow-sm whitespace-nowrap
-                                                ${currentLocation === loc ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-indigo-100 hover:text-indigo-700'}">
-                                            ${loc}
-                                        </button>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        ` : ''}
-                        ${view === 'staff' && LOCATIONS.length === 0 ? `
-                            <p class="text-red-500 italic">No sites configured. Contact admin.</p>
-                        ` : ''}
-                    </div>
-                </header>
-                <div id="content"></div>
-                ${view === 'staff' && currentLocation && Object.keys(issueQueue).length > 0 ? renderFloatingCartButton() : ''}
-            `;
-            const content = document.getElementById('content');
-            if (view === 'staff') {
-                if (currentLocation && LOCATIONS.includes(currentLocation)) { 
-                    content.innerHTML = renderLocationView(currentLocation);
-                } else {
-                    content.innerHTML = renderLocationSelectionScreen();
-                }
-            } else if (view === 'admin') {
-                content.innerHTML = renderAdminView();
-                // Set the active tab content after rendering the full admin view structure
-                window.setAdminTab(adminTab); 
-            } else {
-                 // Should not happen if logic is correct, but handles fallback
-                content.innerHTML = renderAdminLoginFallback();
-            }
-            lucide.createIcons(); 
-        };
-        
-        const renderAdminLoginFallback = () => {
-             return `
-                <div class="p-8 text-center bg-white shadow-xl rounded-xl">
-                    <h2 class="text-2xl font-semibold text-red-700 mb-6">Access Denied</h2>
-                    <p class="text-gray-600 mb-8">You must log in as an administrator to access this panel. (Password Hint: ${ADMIN_PASSWORD})</p>
-                    <button onclick="window.showAdminLogin()" class="px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition-transform transform hover:scale-[1.03]">
-                        Go to Admin Login
-                    </button>
-                </div>
-            `;
-        }
-
-        const renderFloatingCartButton = () => {
-            const count = Object.keys(issueQueue).length;
-            if (count === 0) return '';
-            
-            const totalUnits = Object.values(issueQueue).reduce((sum, item) => sum + item.quantity, 0);
-
-            return `
-                <button onclick="window.showIssueCartModal()"
-                    class="fixed bottom-6 right-6 p-4 bg-indigo-600 text-white font-bold rounded-full shadow-2xl transition-transform transform hover:scale-105 flex items-center z-40">
-                    <i data-lucide="minus-circle" class="w-6 h-6 mr-2"></i>
-                    Remove Items (${totalUnits})
-                </button>
-            `;
-        };
-
-        const renderLocationSelectionScreen = () => {
-            return `
-                <div class="p-8 text-center bg-white shadow-xl rounded-xl">
-                    <h2 class="text-2xl font-semibold text-indigo-700 mb-6">Welcome, Staff Member</h2>
-                    <p class="text-gray-600 mb-8">Please select your operational site to view and manage stock levels.</p>
-                    ${LOCATIONS.length > 0 ? `
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl mx-auto">
-                            ${LOCATIONS.map(loc => `
-                                <button onclick="window.setLocationView('${loc}')"
-                                    class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-3 px-6 rounded-lg shadow-md transition-transform transform hover:scale-[1.03]">
-                                    ${loc}
-                                </button>
-                            `).join('')}
-                        </div>
-                    ` : `
-                        <p class="text-lg text-red-500 font-medium">No sites have been configured by the administrator yet.</p>
-                    `}
-                </div>
-            `;
-        };
-
-        const renderLocationView = (location) => {
-            const items = Object.values(stockLevels).sort((a, b) => a.id.localeCompare(b.id));
-
-            return `
-                <h2 class="text-2xl font-semibold text-gray-800 mb-6">Stock Levels at: <span class="text-indigo-600">${location}</span></h2>
-                <p class="text-sm text-gray-600 mb-4">Click "**Add to Cart**" repeatedly to increment the quantity for removal.</p>
+                const card = document.createElement('div');
+                card.className = `stock-card p-6 rounded-xl shadow-lg border-t-4 ${lowStockClass} transition duration-300 hover:shadow-xl`;
                 
-                <div class="overflow-x-auto bg-white shadow-xl rounded-xl">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-indigo-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 z-10 bg-indigo-50 rounded-tl-xl">
-                                    Item
-                                </th>
-                                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Stock Level
-                                </th>
-                                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-xl">
-                                    Remove Stock (Add to Cart)
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            ${items.length === 0 ? `
-                                <tr>
-                                    <td colspan="3" class="px-6 py-4 text-center text-gray-500">
-                                        No stock items configured yet.
-                                    </td>
-                                </tr>
-                            ` : items.map(item => {
-                                const level = item[location] || 0; 
-                                const threshold = item.threshold || 0;
-                                const isLow = level <= threshold && level > 0;
-                                const isZero = level === 0;
-                                const color = isZero ? 'bg-red-100 text-red-700 border-red-500' : isLow ? 'bg-yellow-100 text-yellow-700 border-yellow-500' : 'bg-green-100 text-green-700 border-green-500';
-
-                                const queuedItem = issueQueue[item.id];
-                                const isQueued = queuedItem && queuedItem.location === location;
-                                const queuedQty = isQueued ? queuedItem.quantity : 0;
-
-                                return `
-                                    <tr>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 z-0 bg-white">
-                                            <span>${item.id}</span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-center text-sm">
-                                            <span class="inline-flex items-center px-3 py-1 rounded-full font-semibold border ${color} min-w-[70px] justify-center shadow-sm">
-                                                ${level} 
-                                                ${isZero ? '<i data-lucide="bomb" class="w-4 h-4 ml-1 inline"></i>' : isLow ? '<i data-lucide="alert-triangle" class="w-4 h-4 ml-1 inline"></i>' : ''}
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-center text-sm">
-                                            <button onclick="window.addItemToQueue('${item.id}', '${location}')"
-                                                class="ml-3 p-2 bg-indigo-100 text-indigo-600 hover:bg-indigo-200 rounded-lg transition duration-150 shadow-md transform hover:scale-105 text-sm flex items-center justify-center mx-auto ${isQueued ? 'border border-indigo-500 font-semibold' : ''}"
-                                                title="Add to Removal List">
-                                                <i data-lucide="minus-circle" class="w-4 h-4 mr-1"></i> ${isQueued ? `Add More (${queuedQty})` : 'Add to Cart'}
-                                            </button>
-                                        </td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        };
-
-        window.addItemToQueue = (itemName, location) => {
-            if (issueQueue[itemName] && issueQueue[itemName].location === location) {
-                issueQueue[itemName].quantity += 1;
-            } else {
-                issueQueue[itemName] = { quantity: 1, location: location };
-            }
-            
-            renderApp(); 
-        };
-        
-        window.showIssueCartModal = () => {
-            const itemsInQueue = Object.keys(issueQueue).map(key => ({
-                itemName: key,
-                ...issueQueue[key]
-            }));
-
-            const totalUnits = itemsInQueue.reduce((sum, item) => sum + item.quantity, 0);
-            const suggestedLocation = itemsInQueue.length > 0 ? itemsInQueue[0].location : currentLocation;
-
-            const cartListHtml = itemsInQueue.map(item => `
-                <div class="flex justify-between items-center py-2 border-b last:border-b-0">
-                    <span class="font-medium text-gray-800">${item.itemName}</span>
-                    <div class="flex items-center space-x-2">
-                        <input type="number" 
-                               min="1" 
-                               value="${item.quantity}" 
-                               id="cart-qty-${item.itemName.replace(/\s/g, '-')}"
-                               onchange="window.updateCartItem('${item.itemName}', this.value)"
-                               class="w-16 p-1 border border-gray-300 rounded-md text-center text-sm shadow-sm"
+                card.innerHTML = `
+                    <h3 class="text-xl font-bold text-gray-800 mb-1">${itemId}</h3>
+                    <p class="text-sm text-gray-500 mb-4">Threshold: ${item.threshold}</p>
+                    <div class="flex justify-between items-center">
+                        <p class="text-3xl font-extrabold ${isLow ? 'text-red-600' : 'text-indigo-600'}">
+                            ${stock}
+                            <span class="text-base font-normal text-gray-500 ml-2">${currentSite ? '' : 'Total Stock'}</span>
+                        </p>
+                        <button data-item-id="${itemId}" 
+                            class="add-to-cart-btn px-4 py-2 bg-green-500 text-white font-medium rounded-lg shadow-md hover:bg-green-600 transition duration-150 ${currentSite ? '' : 'opacity-50 cursor-not-allowed'}"
+                            ${currentSite ? '' : 'disabled'}
+                            title="${currentSite ? '' : 'Please select a site first'}"
                         >
-                        <button onclick="window.removeFromCart('${item.itemName}')" class="text-red-500 hover:text-red-700 p-1">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block -mt-0.5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M3 1a1 1 0 000 2h1.22l.305 1.258A4 4 0 007 9h10a1 1 0 00.815-.44l.947-1.894A1.25 1.25 0 0017 5H7.491c-.34 0-.65.188-.831.493l-1.396 2.546z"/><path d="M5 13a2 2 0 110 4 2 2 0 010-4zm10 0a2 2 0 110 4 2 2 0 010-4z"/></svg>
+                            Remove
                         </button>
                     </div>
+                    ${isLow ? '<p class="mt-2 text-sm text-red-600 font-semibold">LOW STOCK WARNING!</p>' : ''}
+                `;
+                list.appendChild(card);
+            });
+            
+            document.querySelectorAll('.add-to-cart-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const itemId = e.currentTarget.dataset.itemId;
+                    addToCart(itemId);
+                });
+            });
+        };
+
+        const renderLowStockReview = () => {
+            if (!isAdmin) return;
+            const list = document.getElementById('low-stock-list');
+            list.innerHTML = '';
+            let lowStockFound = false;
+
+            SITE_LOCATIONS.forEach(site => {
+                const siteData = stockData[site] || {};
+                Object.keys(itemNames).forEach(itemId => {
+                    const stock = siteData[itemId] || 0;
+                    const threshold = itemNames[itemId].threshold;
+                    if (stock <= threshold) {
+                        lowStockFound = true;
+                        const p = document.createElement('p');
+                        p.className = 'p-3 bg-red-50 border-l-4 border-red-500 text-sm';
+                        p.innerHTML = `<span class="font-bold">${itemId}</span> at <span class="font-semibold">${site}</span>: Stock is <span class="text-red-600">${stock}</span> (Threshold: ${threshold})`;
+                        list.appendChild(p);
+                    }
+                });
+            });
+
+            if (!lowStockFound) {
+                list.innerHTML = '<p class="p-3 bg-green-50 text-green-700 font-semibold rounded-lg">All monitored stock levels are currently healthy!</p>';
+            }
+        };
+
+        const renderAdminSelects = () => {
+            const itemSelects = document.querySelectorAll('#mass-update-item-select, #single-update-item-select, #delete-item-select');
+            
+            // Site Selects (always the same set of locations + global option)
+            const siteSelects = document.querySelectorAll('#mass-update-site-select, #single-update-site-select');
+            
+            // Populate Site Selects
+            siteSelects.forEach(select => {
+                const selectedValue = select.value;
+                select.innerHTML = '';
+                
+                // Add Global Update option only to the Mass Update tab
+                if (select.id === 'mass-update-site-select') {
+                    select.add(new Option('All Sites (Global Update)', 'GLOBAL'));
+                }
+                
+                SITE_LOCATIONS.forEach(site => {
+                    select.add(new Option(site, site));
+                });
+
+                select.value = selectedValue || (select.id === 'mass-update-site-select' ? 'GLOBAL' : SITE_LOCATIONS[0]);
+            });
+
+
+            // Populate Item Selects
+            const items = Object.values(itemNames).sort((a, b) => a.name.localeCompare(b.name));
+            
+            itemSelects.forEach(select => {
+                const selectedValue = select.value;
+                select.innerHTML = '';
+                
+                if (items.length === 0) {
+                     select.add(new Option('No items defined', ''));
+                     return;
+                }
+
+                items.forEach(item => {
+                    select.add(new Option(item.name, item.name));
+                });
+                select.value = selectedValue || items[0].name;
+            });
+        };
+
+        const renderTransactionLog = (transactions) => {
+            const tbody = document.getElementById('transactions-body');
+            const noMessage = document.getElementById('no-transactions-message');
+            tbody.innerHTML = '';
+
+            if (transactions.length === 0) {
+                noMessage.classList.remove('hidden');
+                return;
+            }
+
+            noMessage.classList.add('hidden');
+
+            transactions.forEach(tx => {
+                const row = document.createElement('tr');
+                const isRemoval = tx.type === 'REMOVAL' || tx.quantity < 0;
+                const changeClass = isRemoval ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold';
+                const formattedTime = new Date(tx.timestamp).toLocaleString();
+
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formattedTime}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${tx.item}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm ${changeClass}">${tx.type === 'REMOVAL' ? `-${tx.quantity}` : (tx.quantity > 0 ? `+${tx.quantity}` : tx.quantity)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tx.site}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tx.userName || 'Admin'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tx.type}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        };
+
+        // --- 10. CART LOGIC ---
+
+        const addToCart = (itemId) => {
+            if (!currentSite) {
+                alertUser("Error", "Please select your operating site first.", "red");
+                return;
+            }
+            itemCart[itemId] = (itemCart[itemId] || 0) + 1;
+            updateCartButton();
+        };
+
+        const updateCartButton = () => {
+            const totalItems = Object.values(itemCart).reduce((sum, count) => sum + count, 0);
+            const cartButton = document.getElementById('cart-button');
+            
+            if (totalItems > 0) {
+                cartButton.textContent = `Remove Items (${totalItems})`;
+                cartButton.classList.remove('hidden');
+                cartButton.onclick = showCartModal;
+            } else {
+                cartButton.classList.add('hidden');
+            }
+        };
+
+        const showCartModal = () => {
+            const itemsHTML = Object.keys(itemCart).map(itemId => `
+                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span class="font-medium text-gray-800">${itemId}</span>
+                    <span class="text-indigo-600 font-bold">${itemCart[itemId]}</span>
                 </div>
             `).join('');
 
-            showModal(`Remove Items Confirmation (${totalUnits} unit${totalUnits !== 1 ? 's' : ''})`, `
-                <p class="text-gray-700 mb-4 font-semibold">Ready to confirm the removal of these items from stock at **${suggestedLocation}**.</p>
-                <form id="cart-form" onsubmit="window.handleProcessQueue(event)" class="space-y-4">
-                    <!-- Staff Details -->
-                    <div class="p-4 bg-indigo-50 rounded-lg border border-indigo-200">
-                        <h4 class="font-semibold text-indigo-700 mb-2">Removal Details (Required)</h4>
-                        <div>
-                            <label for="issue-staff-name" class="block text-sm font-medium text-gray-700">Your Name</label>
-                            <input type="text" id="issue-staff-name" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="e.g., Jane Doe">
-                        </div>
-                        <div class="mt-3">
-                            <label for="issue-location" class="block text-sm font-medium text-gray-700">Location to Remove From</label>
-                            <select id="issue-location" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
-                                ${LOCATIONS.map(loc => `<option value="${loc}" ${suggestedLocation === loc ? 'selected' : ''}>${loc}</option>`).join('')}
-                            </select>
-                        </div>
-                    </div>
+            const modalContent = `
+                <h3 class="text-2xl font-bold text-indigo-600 mb-4">Confirm Stock Removal</h3>
+                <p class="text-gray-700 mb-3">Site: <span class="font-semibold">${currentSite}</span></p>
+                <div class="max-h-48 overflow-y-auto mb-4 p-2 border rounded-lg bg-gray-50">
+                    ${itemsHTML}
+                </div>
+                <div class="mb-4">
+                    <label for="staff-name" class="block text-sm font-medium text-gray-700">Staff Name / Initiator</label>
+                    <input type="text" id="staff-name" placeholder="Enter your name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5">
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button onclick="hideModal()" class="px-4 py-2 bg-gray-300 text-gray-800 font-medium rounded-lg hover:bg-gray-400">Cancel</button>
+                    <button id="confirm-removal-btn" class="px-4 py-2 bg-red-600 text-white font-medium rounded-lg shadow-md hover:bg-red-700">Confirm Removal</button>
+                </div>
+            `;
+            showModal(modalContent);
 
-                    <!-- Cart List -->
-                    <div class="max-h-60 overflow-y-auto border border-gray-200 p-3 rounded-lg bg-white shadow-inner">
-                        <h4 class="font-semibold text-gray-700 mb-2">Items and Quantities to Remove:</h4>
-                        ${cartListHtml}
-                    </div>
-
-                    <div class="flex justify-between items-center pt-4 border-t">
-                        <button type="button" onclick="window.closeModal(); window.clearCart();" class="text-sm px-3 py-2 text-gray-700 hover:text-red-700 transition duration-150 flex items-center">
-                            <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i> Clear List
-                        </button>
-                        <div class="flex space-x-2">
-                            <button type="button" onclick="window.closeModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">Cancel</button>
-                            <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-transform transform hover:scale-[1.01]">
-                                <i data-lucide="package-minus" class="w-5 h-5 mr-1"></i> Confirm Removal (${totalUnits})
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            `, 'info', false);
-        };
-
-        window.updateCartItem = (itemName, quantity) => {
-            const qty = parseInt(quantity, 10);
-            if (qty < 1 || isNaN(qty)) {
-                issueQueue[itemName].quantity = 1;
-                document.getElementById(`cart-qty-${itemName.replace(/\s/g, '-')}`).value = 1;
-            } else {
-                issueQueue[itemName].quantity = qty;
-            }
-            window.closeModal();
-            window.showIssueCartModal();
-        };
-
-        window.removeFromCart = (itemName) => {
-            delete issueQueue[itemName];
-            window.closeModal();
-            renderApp(); 
-            if (Object.keys(issueQueue).length > 0) {
-                 window.showIssueCartModal();
-            }
-        };
-
-        window.clearCart = () => {
-            issueQueue = {};
-            renderApp();
-            showModal('Cart Cleared', 'All items have been removed from the issue cart.', 'info');
-        };
-
-        window.handleProcessQueue = async (e) => {
-            e.preventDefault();
-            window.closeModal(); 
-            
-            const staffName = document.getElementById('issue-staff-name').value;
-            const location = document.getElementById('issue-location').value;
-
-            if (!staffName || !location) {
-                showModal('Error', 'Please enter your name and select a location.', 'error');
-                return;
-            }
-
-            const itemsToProcess = Object.keys(issueQueue).map(key => ({
-                itemName: key,
-                quantity: issueQueue[key].quantity,
-                location: location // Use the location selected in the modal
-            }));
-            
-            showModal('Processing...', 'Updating stock levels in Firestore...', 'loading', false);
-
-            let allSuccessful = true;
-            let failureMessages = [];
-
-            for (const item of itemsToProcess) {
-                const result = await handleStockUpdate(
-                    item.itemName, 
-                    item.location, 
-                    -item.quantity, // Quantity is negative for removal
-                    staffName, 
-                    'CART_ISSUE'
-                );
-
-                if (!result.success) {
-                    allSuccessful = false;
-                    failureMessages.push(result.message);
+            document.getElementById('confirm-removal-btn').onclick = async () => {
+                const userName = document.getElementById('staff-name').value.trim();
+                if (!userName) {
+                    alertUser("Validation Error", "Please enter your name.", "red");
+                    return;
                 }
-            }
-            
-            if (allSuccessful) {
-                issueQueue = {}; // Clear queue only on success
-                renderApp();
-                showModal('Success!', `Successfully processed removal of ${itemsToProcess.length} items from ${location}.`, 'success');
-            } else {
-                window.closeModal(); // Close loading modal
-                // Restore the failed items to the queue and show errors
-                showModal('Partial Failure', `Some items failed to process. Please review the errors below and try again. Items with errors remain in the cart.`, 'error', true, failureMessages.join('<br>'));
+                await processCart(userName);
+            };
+        };
+
+        const processCart = async (userName) => {
+            hideModal();
+            showLoading(true);
+
+            try {
+                // Use a Firestore Transaction to ensure atomic updates
+                await runTransaction(db, async (transaction) => {
+                    const siteDocRef = doc(getStockLevelsRef(), currentSite);
+                    const siteDoc = await transaction.get(siteDocRef);
+
+                    if (!siteDoc.exists()) {
+                        throw new Error(`Site data for ${currentSite} not found.`);
+                    }
+
+                    const newStock = siteDoc.data();
+                    const transactionsBatch = [];
+
+                    for (const itemId in itemCart) {
+                        const quantity = itemCart[itemId];
+                        const currentQty = newStock[itemId] || 0;
+                        const finalQty = Math.max(0, currentQty - quantity); // Prevent negative stock
+
+                        // Update the stock document
+                        newStock[itemId] = finalQty;
+                        
+                        // Prepare transaction log entry
+                        transactionsBatch.push({
+                            timestamp: new Date().toISOString(),
+                            site: currentSite,
+                            item: itemId,
+                            quantity: quantity,
+                            userName: userName,
+                            type: 'REMOVAL',
+                            userId: userId,
+                        });
+                    }
+
+                    // Commit the updated stock levels for the site
+                    transaction.update(siteDocRef, newStock);
+
+                    // Add transaction logs
+                    for (const tx of transactionsBatch) {
+                        transaction.set(doc(getTransactionsRef()), tx);
+                    }
+                });
+
+                alertUser("Success", "Stock removed and transaction logged successfully!", "green");
+                itemCart = {}; // Clear cart
+                updateCartButton();
+            } catch (error) {
+                console.error("Transaction failed: ", error);
+                alertUser("Error", `Stock update failed: ${error.message}`, "red");
+            } finally {
+                showLoading(false);
             }
         };
 
-        // --- Admin View Functions ---
 
-        window.setView = (newView) => {
-            if (newView === 'admin' && view !== 'admin') {
-                window.showAdminLogin();
-            } else {
-                view = newView;
-                renderApp();
-            }
-        };
+        // --- 11. ADMIN LOGIC ---
 
-        window.setLocationView = (location) => {
-            currentLocation = location;
-            renderApp();
-        };
+        const handleAdminLogin = () => {
+            const modalContent = `
+                <h3 class="text-2xl font-bold text-indigo-600 mb-4">Admin Login</h3>
+                <p class="text-gray-700 mb-4">Please enter the administrator password.</p>
+                <div class="mb-4">
+                    <label for="admin-password" class="block text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" id="admin-password" placeholder="Enter password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5">
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button onclick="hideModal()" class="px-4 py-2 bg-gray-300 text-gray-800 font-medium rounded-lg hover:bg-gray-400">Cancel</button>
+                    <button id="confirm-login-btn" class="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow-md hover:bg-indigo-700">Login</button>
+                </div>
+                <p id="login-message" class="mt-3 text-sm font-medium text-red-600 hidden"></p>
+            `;
+            showModal(modalContent);
 
-        window.setAdminTab = (tab) => {
-            // 1. Update state
-            adminTab = tab;
-            
-            // 2. Update tab button styles manually
-            const tabButtons = document.querySelectorAll('#admin-tab-bar button');
-            tabButtons.forEach(button => {
-                const buttonTabId = button.getAttribute('data-tab-id');
-                if (buttonTabId === tab) {
-                    button.classList.add('tab-active');
-                    button.classList.remove('text-gray-500', 'hover:text-gray-700');
+            const passwordInput = document.getElementById('admin-password');
+            const loginMessage = document.getElementById('login-message');
+
+            document.getElementById('confirm-login-btn').onclick = () => {
+                if (passwordInput.value === ADMIN_PASSWORD) {
+                    isAdmin = true;
+                    hideModal();
+                    setAdminMode(true);
                 } else {
-                    button.classList.remove('tab-active');
-                    button.classList.add('text-gray-500', 'hover:text-gray-700');
+                    loginMessage.textContent = "Invalid password.";
+                    loginMessage.classList.remove('hidden');
                 }
-            });
-
-            // 3. Update tab content
-            const tabContent = document.getElementById('admin-tab-content');
-            if (!tabContent) return; // Wait for the element to exist
-
-            tabContent.innerHTML = ''; 
-
-            if (tab === 'lowStockReview') {
-                tabContent.innerHTML = renderLowStockReview();
-            } else if (tab === 'massUpdate') {
-                tabContent.innerHTML = renderMassUpdateForm();
-                // Ensure stock display is updated after the form is rendered
-                if (Object.keys(stockLevels).length > 0) {
-                    const firstItem = document.getElementById('mass-item')?.value || Object.keys(stockLevels)[0];
-                    window.updateMassUpdateStockDisplay(firstItem);
-                }
-            } else if (tab === 'addRemoveStock') {
-                tabContent.innerHTML = renderAddRemoveStockForm();
-            } else if (tab === 'transactionLog') {
-                tabContent.innerHTML = renderTransactionLog();
-            } else if (tab === 'itemManagement') { // NEW TAB
-                tabContent.innerHTML = renderItemManagementForm();
-            }
-            // Recreate icons for the dynamically added content
-            lucide.createIcons(); 
+            };
         };
 
-        const renderAdminView = () => {
-            const tabs = [
-                { id: 'lowStockReview', label: 'Low Stock Review', icon: 'alert-triangle' },
-                { id: 'massUpdate', label: 'Mass Stock Update', icon: 'layout-list' },
-                { id: 'addRemoveStock', label: 'Single Item Update', icon: 'clipboard-list' },
-                { id: 'itemManagement', label: 'Item Management', icon: 'tool' }, // NEW TAB
-                { id: 'transactionLog', label: 'Transaction Log', icon: 'file-text' }
-            ];
+        const setAdminMode = (enabled) => {
+            const adminDashboard = document.getElementById('admin-dashboard');
+            const staffView = document.getElementById('staff-view');
+            const siteSelection = document.getElementById('site-selection');
+            const adminLoginBtn = document.getElementById('admin-login-btn');
 
-            return `
-                <h2 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-3">Admin Dashboard</h2>
-                
-                <div id="admin-tab-bar" class="flex flex-wrap border-b border-gray-200 mb-6 bg-white rounded-t-xl shadow-md p-2">
-                    ${tabs.map(tab => `
-                        <button onclick="window.setAdminTab('${tab.id}')"
-                                data-tab-id="${tab.id}"
-                                class="flex items-center px-4 py-2 font-medium transition-colors 
-                                        ${adminTab === tab.id ? 'tab-active' : 'text-gray-500 hover:text-gray-700'}">
-                            <i data-lucide="${tab.icon}" class="w-5 h-5 mr-2"></i>
-                            ${tab.label}
-                        </button>
-                    `).join('')}
+            if (enabled) {
+                adminDashboard.classList.remove('hidden');
+                staffView.classList.add('hidden');
+                siteSelection.classList.add('hidden');
+                adminLoginBtn.textContent = 'Admin Logged In';
+                adminLoginBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                adminLoginBtn.classList.add('bg-gray-500', 'cursor-default');
+                setAdminTab('low-stock'); // Default to the first tab
+                renderAdminSelects();
+            } else {
+                adminDashboard.classList.add('hidden');
+                staffView.classList.remove('hidden');
+                siteSelection.classList.remove('hidden');
+                adminLoginBtn.textContent = 'Admin Login';
+                adminLoginBtn.classList.remove('bg-gray-500', 'cursor-default');
+                adminLoginBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+            }
+        };
+
+        const setAdminTab = (tabName) => {
+            document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+                const isActive = btn.dataset.tab === tabName;
+                btn.classList.toggle('border-indigo-600', isActive);
+                btn.classList.toggle('text-indigo-600', isActive);
+                btn.classList.toggle('border-transparent', !isActive);
+                btn.classList.toggle('text-gray-500', !isActive);
+            });
+
+            document.querySelectorAll('.admin-content-tab').forEach(content => {
+                const isActive = content.dataset.tabContent === tabName;
+                content.classList.toggle('hidden', !isActive);
+            });
+
+            // Re-render select options every time admin views a tab that uses them
+            if (['mass-update', 'single-update', 'item-management'].includes(tabName)) {
+                renderAdminSelects();
+            }
+        };
+
+        const alertUser = (title, message, type) => {
+            const bgColor = type === 'green' ? 'bg-green-100' : (type === 'red' ? 'bg-red-100' : 'bg-yellow-100');
+            const textColor = type === 'green' ? 'text-green-700' : (type === 'red' ? 'text-red-700' : 'text-yellow-700');
+            const headerColor = type === 'green' ? 'text-green-600' : (type === 'red' ? 'text-red-600' : 'text-yellow-600');
+            const buttonColor = type === 'green' ? 'bg-green-600' : (type === 'red' ? 'bg-red-600' : 'bg-yellow-600');
+
+            const modalContent = `
+                <div class="${bgColor} p-4 rounded-lg">
+                    <h3 class="text-xl font-bold ${headerColor} mb-2">${title}</h3>
+                    <p class="${textColor} mb-4">${message}</p>
                 </div>
-                
-                <div id="admin-tab-content" class="bg-white p-6 rounded-xl shadow-xl">
-                    <!-- Content will be rendered by setAdminTab -->
+                <div class="flex justify-end mt-4">
+                    <button onclick="hideModal()" class="px-4 py-2 ${buttonColor} text-white font-medium rounded-lg hover:opacity-90">Dismiss</button>
                 </div>
             `;
+            showModal(modalContent);
         };
 
-        // --- Admin Tab Content Renderers ---
+
+        // --- 12. ADMIN ACTION HANDLERS ---
         
-        // --- NEW ITEM MANAGEMENT FUNCTIONS ---
-        window.handleAddItem = async (e) => {
-            e.preventDefault();
-            const itemName = document.getElementById('new-item-name').value.trim();
-            const threshold = parseInt(document.getElementById('new-item-threshold').value, 10);
+        const handleMassUpdate = async () => {
+            const site = document.getElementById('mass-update-site-select').value;
+            const itemId = document.getElementById('mass-update-item-select').value;
+            const quantityInput = document.getElementById('mass-update-quantity');
+            const quantity = parseInt(quantityInput.value);
+            const messageEl = document.getElementById('mass-update-message');
 
-            if (!itemName) {
-                showModal('Error', 'Item name is required.', 'error');
-                return;
-            }
-            if (isNaN(threshold) || threshold < 0) {
-                showModal('Error', 'Threshold must be a non-negative number.', 'error');
-                return;
-            }
-            
-            if (stockLevels[itemName]) {
-                showModal('Error', `Item "${itemName}" already exists.`, 'error');
+            messageEl.classList.add('hidden');
+
+            if (!itemId || isNaN(quantity) || quantity === 0) {
+                messageEl.textContent = 'Please select an item and enter a non-zero quantity.';
+                messageEl.classList.remove('hidden');
+                messageEl.classList.add('text-red-600');
                 return;
             }
 
-            const stockDocRef = doc(getStockLevelsRef(), itemName);
-            
-            // Prepare initial stock data (0 for all current locations)
-            const newStockData = {
-                threshold: threshold
-            };
-            LOCATIONS.forEach(loc => {
-                newStockData[loc] = 0;
-            });
-            
-            showModal('Processing...', `Adding new item: ${itemName}...`, 'loading', false);
+            showLoading(true);
 
             try {
-                await setDoc(stockDocRef, newStockData);
-                window.closeModal();
-                showModal('Success!', `New item **${itemName}** added successfully with threshold **${threshold}**. Stock levels initialized to 0 at all sites.`, 'success');
-                e.target.reset(); // Clear form
-            } catch (e) {
-                window.closeModal();
-                console.error("Error adding new item:", e);
-                showModal('Error', `Failed to add item: ${e.message}`, 'error');
+                if (site === 'GLOBAL') {
+                    // GLOBAL update (across all sites)
+                    await Promise.all(SITE_LOCATIONS.map(async (location) => {
+                        await runTransaction(db, async (transaction) => {
+                            const siteDocRef = doc(getStockLevelsRef(), location);
+                            const siteDoc = await transaction.get(siteDocRef);
+
+                            const currentQty = siteDoc.exists() ? (siteDoc.data()[itemId] || 0) : 0;
+                            const finalQty = Math.max(0, currentQty + quantity);
+                            
+                            // Update stock
+                            transaction.set(siteDocRef, { [itemId]: finalQty }, { merge: true });
+
+                            // Log transaction
+                            const tx = {
+                                timestamp: new Date().toISOString(),
+                                site: location,
+                                item: itemId,
+                                quantity: Math.abs(quantity),
+                                userName: 'System Admin',
+                                type: quantity > 0 ? 'MASS_ADD' : 'MASS_REMOVE',
+                                userId: userId,
+                            };
+                            transaction.set(doc(getTransactionsRef()), tx);
+                        });
+                    }));
+                    messageEl.textContent = `Successfully applied change of ${quantity} to ${itemId} across ALL sites.`;
+
+                } else {
+                    // SITE-SPECIFIC update
+                    await runTransaction(db, async (transaction) => {
+                        const siteDocRef = doc(getStockLevelsRef(), site);
+                        const siteDoc = await transaction.get(siteDocRef);
+
+                        const currentQty = siteDoc.exists() ? (siteDoc.data()[itemId] || 0) : 0;
+                        const finalQty = Math.max(0, currentQty + quantity);
+                        
+                        // Update stock
+                        transaction.set(siteDocRef, { [itemId]: finalQty }, { merge: true });
+
+                        // Log transaction
+                        const tx = {
+                            timestamp: new Date().toISOString(),
+                            site: site,
+                            item: itemId,
+                            quantity: Math.abs(quantity),
+                            userName: 'System Admin',
+                            type: quantity > 0 ? 'MASS_ADD' : 'MASS_REMOVE',
+                            userId: userId,
+                        };
+                        transaction.set(doc(getTransactionsRef()), tx);
+                    });
+                    messageEl.textContent = `Successfully applied change of ${quantity} to ${itemId} at ${site}.`;
+                }
+                
+                messageEl.classList.remove('text-red-600');
+                messageEl.classList.add('text-green-600');
+                messageEl.classList.remove('hidden');
+                quantityInput.value = ''; // Clear input
+
+            } catch (error) {
+                console.error("Mass update transaction failed: ", error);
+                messageEl.textContent = `Update failed: ${error.message}`;
+                messageEl.classList.remove('text-green-600');
+                messageEl.classList.add('text-red-600');
+                messageEl.classList.remove('hidden');
+            } finally {
+                showLoading(false);
             }
         };
 
-        window.promptDeleteItem = (itemName) => {
-            showModal('Confirm Deletion', 
-                `<p class="text-red-600 font-semibold">Are you sure you want to permanently delete the item: **${itemName}**?</p>
-                 <p class="text-sm text-gray-700 mt-2">This action is irreversible and will remove all stock tracking data for this item.</p>
-                 <div class="mt-4 flex justify-end space-x-2">
-                    <button type="button" onclick="window.closeModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">Cancel</button>
-                    <button type="button" onclick="window.handleDeleteItem('${itemName}')" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">Delete Permanently</button>
-                 </div>`, 
-                 'error', true
-            );
-        };
+        const handleSingleUpdate = async () => {
+            const site = document.getElementById('single-update-site-select').value;
+            const itemId = document.getElementById('single-update-item-select').value;
+            const newStockInput = document.getElementById('single-update-new-stock');
+            const newStock = parseInt(newStockInput.value);
+            const messageEl = document.getElementById('single-update-message');
 
-        window.handleDeleteItem = async (itemName) => {
-            window.closeModal(); // Close confirmation modal
-            const stockDocRef = doc(getStockLevelsRef(), itemName);
+            messageEl.classList.add('hidden');
 
-            showModal('Processing...', `Deleting item: ${itemName}...`, 'loading', false);
+            if (!itemId || !site || isNaN(newStock) || newStock < 0) {
+                messageEl.textContent = 'Please select a site, an item, and enter a valid non-negative stock level.';
+                messageEl.classList.remove('hidden');
+                messageEl.classList.add('text-red-600');
+                return;
+            }
+
+            showLoading(true);
 
             try {
-                await deleteDoc(stockDocRef);
-                window.closeModal();
-                showModal('Success!', `Item **${itemName}** has been permanently removed from the stock list.`, 'success');
-                // The onSnapshot listener will automatically call renderApp()
-            } catch (e) {
-                window.closeModal();
-                console.error("Error deleting item:", e);
-                showModal('Error', `Failed to delete item: ${e.message}`, 'error');
+                const siteDocRef = doc(getStockLevelsRef(), site);
+                
+                await runTransaction(db, async (transaction) => {
+                    const siteDoc = await transaction.get(siteDocRef);
+                    
+                    const currentQty = siteDoc.exists() ? (siteDoc.data()[itemId] || 0) : 0;
+                    const changeQty = newStock - currentQty; // Calculate the change
+                    
+                    // Update stock
+                    transaction.set(siteDocRef, { [itemId]: newStock }, { merge: true });
+
+                    // Log transaction
+                    const tx = {
+                        timestamp: new Date().toISOString(),
+                        site: site,
+                        item: itemId,
+                        quantity: Math.abs(changeQty),
+                        userName: 'System Admin (Set)',
+                        type: changeQty > 0 ? 'MANUAL_ADD' : (changeQty < 0 ? 'MANUAL_REMOVE' : 'MANUAL_SET_NO_CHANGE'),
+                        userId: userId,
+                    };
+                    transaction.set(doc(getTransactionsRef()), tx);
+                });
+                
+                messageEl.textContent = `Successfully set stock of ${itemId} at ${site} to ${newStock}.`;
+                messageEl.classList.remove('text-red-600');
+                messageEl.classList.add('text-green-600');
+                messageEl.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Single update transaction failed: ", error);
+                messageEl.textContent = `Update failed: ${error.message}`;
+                messageEl.classList.remove('text-green-600');
+                messageEl.classList.add('text-red-600');
+                messageEl.classList.remove('hidden');
+            } finally {
+                showLoading(false);
             }
         };
 
-        const renderItemManagementForm = () => {
-            const items = Object.keys(stockLevels).sort();
-            
-            return `
-                <h3 class="text-xl font-semibold mb-6 text-indigo-700 flex items-center">
-                    <i data-lucide="tool" class="w-6 h-6 mr-2"></i> Stock Item Creation and Deletion
-                </h3>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    
-                    <!-- Add New Item -->
-                    <div class="p-5 border border-green-300 rounded-lg bg-green-50 shadow-md">
-                        <h4 class="font-bold text-lg text-green-700 mb-4 flex items-center">
-                            <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i> Add New Stock Item
-                        </h4>
-                        <form onsubmit="window.handleAddItem(event)" class="space-y-4">
-                            <div>
-                                <label for="new-item-name" class="block text-sm font-medium text-gray-700">Item Name (Must be Unique)</label>
-                                <input type="text" id="new-item-name" required placeholder="e.g., FFP3 Masks" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
-                            </div>
-                            <div>
-                                <label for="new-item-threshold" class="block text-sm font-medium text-gray-700">Low Stock Threshold</label>
-                                <input type="number" id="new-item-threshold" required min="0" value="10" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
-                                <p class="text-xs text-gray-500 mt-1">Triggers an alert when stock at a site falls below this number.</p>
-                            </div>
-                            <button type="submit" class="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 transition-colors">
-                                <i data-lucide="package-plus" class="w-5 h-5 mr-2"></i> Create New Item
-                            </button>
-                        </form>
-                    </div>
+        const handleAddNewItem = async () => {
+            const nameInput = document.getElementById('new-item-name');
+            const thresholdInput = document.getElementById('new-item-threshold');
+            const messageEl = document.getElementById('add-item-message');
+            messageEl.classList.add('hidden');
 
-                    <!-- Delete Existing Item -->
-                    <div class="p-5 border border-red-300 rounded-lg bg-red-50 shadow-md">
-                        <h4 class="font-bold text-lg text-red-700 mb-4 flex items-center">
-                            <i data-lucide="trash-2" class="w-5 h-5 mr-2"></i> Delete Existing Stock Item
-                        </h4>
-                        ${items.length === 0 ? `
-                            <p class="text-sm text-red-700 italic">No items available to delete.</p>
-                        ` : `
-                            <div class="space-y-4">
-                                <div>
-                                    <label for="delete-item-name" class="block text-sm font-medium text-gray-700">Select Item to Delete</label>
-                                    <select id="delete-item-name" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
-                                        ${items.map(item => `<option value="${item}">${item} (Threshold: ${stockLevels[item].threshold})</option>`).join('')}
-                                    </select>
-                                </div>
-                                <button onclick="window.promptDeleteItem(document.getElementById('delete-item-name').value)"
-                                        type="button" 
-                                        class="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-50"
-                                        ${items.length === 0 ? 'disabled' : ''}>
-                                    <i data-lucide="package-x" class="w-5 h-5 mr-2"></i> Delete Selected Item
-                                </button>
-                                <p class="text-xs text-red-700 mt-1 font-semibold">WARNING: This permanently removes the item and cannot be undone.</p>
-                            </div>
-                        `}
-                    </div>
-                </div>
-            `;
-        };
-        // --- END NEW ITEM MANAGEMENT FUNCTIONS ---
+            const itemName = nameInput.value.trim();
+            const threshold = parseInt(thresholdInput.value);
 
-        const renderLowStockReview = () => {
-            const lowStockItems = Object.values(stockLevels)
-                .map(item => {
-                    // Filter out non-location keys like 'id' and 'threshold'
-                    const validLocations = LOCATIONS.filter(loc => item.hasOwnProperty(loc));
-
-                    const lowStockLocations = validLocations.filter(loc => (item[loc] || 0) <= item.threshold);
-                    return { ...item, lowStockLocations };
-                })
-                .filter(item => item.lowStockLocations.length > 0)
-                .sort((a, b) => a.id.localeCompare(b.id));
-
-            return `
-                <h3 class="text-xl font-semibold mb-4 text-red-600 flex items-center">
-                    <i data-lucide="alert-circle" class="w-6 h-6 mr-2"></i> Critical Low Stock Review
-                </h3>
-                <p class="text-gray-600 mb-6">These items are at or below their set threshold and require immediate ordering or replenishment.</p>
-                
-                ${lowStockItems.length === 0 ? `
-                    <div class="p-4 bg-green-100 text-green-700 rounded-lg text-center font-medium">
-                        <i data-lucide="check-circle" class="w-5 h-5 mr-2 inline"></i> All stock levels are currently above their thresholds across all sites.
-                    </div>
-                ` : `
-                    <div class="space-y-4">
-                        ${lowStockItems.map(item => `
-                            <div class="p-4 border border-red-300 rounded-lg bg-red-50 shadow-sm">
-                                <h4 class="font-bold text-lg text-red-700 mb-2">${item.id} (Threshold: ${item.threshold})</h4>
-                                <ul class="list-disc list-inside space-y-1">
-                                    ${item.lowStockLocations.map(loc => `
-                                        <li class="text-red-600">
-                                            <span class="font-semibold">${loc}:</span> Current Stock is **${item[loc] || 0}**
-                                        </li>
-                                    `).join('')}
-                                </ul>
-                            </div>
-                        `).join('')}
-                    </div>
-                `}
-            `;
-        };
-        
-        const renderMassUpdateForm = () => {
-            const items = Object.keys(stockLevels).sort();
-            
-            return `
-                <h3 class="text-xl font-semibold mb-4 text-indigo-700 flex items-center">
-                    <i data-lucide="package" class="w-6 h-6 mr-2"></i> Mass Stock Replenishment / Update
-                </h3>
-                <p class="text-gray-600 mb-6">Quickly update stock levels across all locations for a specific item, such as after receiving a large delivery.</p>
-                
-                <form onsubmit="window.handleMassStockUpdate(event)" class="space-y-6">
-                    <!-- Item Selection -->
-                    <div>
-                        <label for="mass-item" class="block text-sm font-medium text-gray-700">Select Item</label>
-                        <select id="mass-item" onchange="window.updateMassUpdateStockDisplay(this.value)" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
-                            ${items.length === 0 ? '<option value="" disabled>No items available</option>' : 
-                                items.map(item => `<option value="${item}">${item}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    <!-- Current Levels Display (Dynamic) -->
-                    <div id="mass-current-levels" class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                        <p class="text-gray-500">Select an item to see current stock levels.</p>
-                    </div>
-
-                    <!-- Quantity Input -->
-                    <div>
-                        <label for="mass-quantity" class="block text-sm font-medium text-gray-700">Quantity to Add/Remove (e.g., 50 for Add, -10 for Remove)</label>
-                        <input type="number" id="mass-quantity" required placeholder="e.g., 50" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
-                    </div>
-
-                    <!-- Staff Name -->
-                    <div>
-                        <label for="mass-staff-name" class="block text-sm font-medium text-gray-700">Admin Name</label>
-                        <input type="text" id="mass-staff-name" required placeholder="Your Name" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
-                    </div>
-
-                    <button type="submit" class="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors transform hover:scale-[1.005]">
-                        <i data-lucide="truck" class="w-5 h-5 mr-2"></i> Confirm Mass Stock Update
-                    </button>
-                </form>
-            `;
-        };
-
-        window.updateMassUpdateStockDisplay = (itemName) => {
-            const item = stockLevels[itemName];
-            const displayDiv = document.getElementById('mass-current-levels');
-
-            if (!item || !displayDiv) return;
-
-            const total = LOCATIONS.reduce((sum, loc) => sum + (item[loc] || 0), 0);
-            
-            displayDiv.innerHTML = `
-                <h4 class="font-semibold text-gray-800 mb-3">Current Stock Levels for ${itemName} (Total: ${total})</h4>
-                <div class="grid grid-cols-2 gap-3 text-sm">
-                    ${LOCATIONS.map(loc => `
-                        <div class="flex justify-between p-2 bg-white rounded-md border">
-                            <span class="font-medium text-gray-600">${loc}</span>
-                            <span class="font-bold text-indigo-600">${item[loc] || 0}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-            lucide.createIcons();
-        };
-
-        window.handleMassStockUpdate = async (e) => {
-            e.preventDefault();
-            
-            const itemName = document.getElementById('mass-item').value;
-            const quantity = parseInt(document.getElementById('mass-quantity').value, 10);
-            const staffName = document.getElementById('mass-staff-name').value;
-
-            if (isNaN(quantity) || quantity === 0) {
-                showModal('Validation Error', 'Quantity must be a non-zero number.', 'error');
+            if (!itemName || isNaN(threshold) || threshold < 0) {
+                messageEl.textContent = 'Please enter a valid item name and a non-negative threshold.';
+                messageEl.classList.remove('hidden', 'text-green-600');
+                messageEl.classList.add('text-red-600');
+                return;
+            }
+            if (itemNames[itemName]) {
+                messageEl.textContent = `Error: Item "${itemName}" already exists.`;
+                messageEl.classList.remove('hidden', 'text-green-600');
+                messageEl.classList.add('text-red-600');
                 return;
             }
 
-            const type = quantity > 0 ? 'MASS_ADD' : 'MASS_REMOVE';
-            const action = quantity > 0 ? 'adding' : 'removing';
-            
-            showModal('Processing...', `Mass ${action} ${Math.abs(quantity)} units of ${itemName} at all sites...`, 'loading', false);
+            showLoading(true);
+            try {
+                // 1. Add item metadata
+                const itemDocRef = doc(getItemsRef(), itemName);
+                await setDoc(itemDocRef, { 
+                    name: itemName, 
+                    threshold: threshold,
+                    createdAt: new Date().toISOString()
+                });
 
-            let allSuccessful = true;
-            let failureMessages = [];
+                // 2. Initialize stock (set to 0) for the new item at all sites
+                await Promise.all(SITE_LOCATIONS.map(async (site) => {
+                    const siteDocRef = doc(getStockLevelsRef(), site);
+                    await setDoc(siteDocRef, { [itemName]: 0 }, { merge: true });
+                }));
 
-            for (const location of LOCATIONS) {
-                const result = await handleStockUpdate(
-                    itemName, 
-                    location, 
-                    quantity,
-                    staffName, 
-                    type
-                );
-
-                if (!result.success) {
-                    allSuccessful = false;
-                    failureMessages.push(`**${location}:** ${result.message}`);
-                }
-            }
-            
-            window.closeModal(); // Close loading modal
-
-            if (allSuccessful) {
-                showModal('Success!', `Mass update successful: ${Math.abs(quantity)} units ${action} to all ${LOCATIONS.length} sites for ${itemName}.`, 'success');
-                e.target.reset(); // Clear form
-            } else {
-                showModal('Partial Failure', `Mass update had issues. Please review the errors below.`, 'error', true, failureMessages.join('<br>'));
+                messageEl.textContent = `Item "${itemName}" added successfully with threshold ${threshold}. Stock initialized to 0 at all sites.`;
+                messageEl.classList.remove('hidden', 'text-red-600');
+                messageEl.classList.add('text-green-600');
+                nameInput.value = '';
+                thresholdInput.value = '';
+            } catch (error) {
+                console.error("Error adding new item:", error);
+                messageEl.textContent = `Failed to add item: ${error.message}`;
+                messageEl.classList.remove('hidden', 'text-green-600');
+                messageEl.classList.add('text-red-600');
+            } finally {
+                showLoading(false);
             }
         };
 
-        const renderAddRemoveStockForm = () => {
-            const items = Object.keys(stockLevels).sort();
-            
-            return `
-                <h3 class="text-xl font-semibold mb-4 text-indigo-700 flex items-center">
-                    <i data-lucide="sliders" class="w-6 h-6 mr-2"></i> Single Item Stock Adjustment
-                </h3>
-                <p class="text-gray-600 mb-6">Add or remove a specific quantity of an item at a single location. Use negative numbers to remove stock.</p>
-                
-                <form onsubmit="window.handleSingleStockUpdate(event)" class="space-y-6">
-                    <!-- Item Selection -->
-                    <div>
-                        <label for="single-item" class="block text-sm font-medium text-gray-700">Select Item</label>
-                        <select id="single-item" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
-                            ${items.length === 0 ? '<option value="" disabled>No items available</option>' : 
-                                items.map(item => `<option value="${item}">${item}</option>`).join('')}
-                        </select>
-                    </div>
+        const handleDeleteItem = async () => {
+            const select = document.getElementById('delete-item-select');
+            const itemId = select.value;
+            const messageEl = document.getElementById('delete-item-message');
+            messageEl.classList.add('hidden');
 
-                    <!-- Location Selection -->
-                    <div>
-                        <label for="single-location" class="block text-sm font-medium text-gray-700">Select Location</label>
-                        <select id="single-location" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
-                            ${LOCATIONS.map(loc => `<option value="${loc}">${loc}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    <!-- Quantity Input -->
-                    <div>
-                        <label for="single-quantity" class="block text-sm font-medium text-gray-700">Quantity Change (+ for Add, - for Remove)</label>
-                        <input type="number" id="single-quantity" required placeholder="e.g., 10 or -5" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
-                    </div>
-
-                    <!-- Staff Name -->
-                    <div>
-                        <label for="single-staff-name" class="block text-sm font-medium text-gray-700">Admin Name</label>
-                        <input type="text" id="single-staff-name" required placeholder="Your Name" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
-                    </div>
-
-                    <button type="submit" class="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors transform hover:scale-[1.005]">
-                        <i data-lucide="save" class="w-5 h-5 mr-2"></i> Confirm Single Stock Adjustment
-                    </button>
-                </form>
-            `;
-        };
-
-        window.handleSingleStockUpdate = async (e) => {
-            e.preventDefault();
-            
-            const itemName = document.getElementById('single-item').value;
-            const location = document.getElementById('single-location').value;
-            const quantity = parseInt(document.getElementById('single-quantity').value, 10);
-            const staffName = document.getElementById('single-staff-name').value;
-
-            if (isNaN(quantity) || quantity === 0) {
-                showModal('Validation Error', 'Quantity must be a non-zero number.', 'error');
+            if (!itemId) {
+                messageEl.textContent = 'Please select an item to delete.';
+                messageEl.classList.remove('hidden', 'text-green-600');
+                messageEl.classList.add('text-red-600');
                 return;
             }
 
-            const type = quantity > 0 ? 'MASS_ADD' : 'MASS_REMOVE'; // Reusing transaction types for simplicity
-            const action = quantity > 0 ? 'adding' : 'removing';
-            
-            showModal('Processing...', `Adjusting stock for ${itemName} at ${location}...`, 'loading', false);
+            // Custom confirmation dialog
+            const confirmHTML = `
+                <h3 class="text-xl font-bold text-red-600 mb-4">Confirm Deletion</h3>
+                <p class="text-gray-700 mb-4">Are you sure you want to permanently delete **${itemId}**? This will remove all history and stock levels for this item.</p>
+                <div class="flex justify-end space-x-3">
+                    <button onclick="hideModal()" class="px-4 py-2 bg-gray-300 text-gray-800 font-medium rounded-lg hover:bg-gray-400">Cancel</button>
+                    <button id="confirm-delete-action" class="px-4 py-2 bg-red-600 text-white font-medium rounded-lg shadow-md hover:bg-red-700">Delete Permanently</button>
+                </div>
+            `;
+            showModal(confirmHTML);
 
-            const result = await handleStockUpdate(
-                itemName, 
-                location, 
-                quantity,
-                staffName, 
-                type
-            );
-            
-            window.closeModal(); // Close loading modal
+            document.getElementById('confirm-delete-action').onclick = async () => {
+                hideModal();
+                showLoading(true);
+                try {
+                    // 1. Delete item metadata
+                    await deleteDoc(doc(getItemsRef(), itemId));
 
-            if (result.success) {
-                showModal('Success!', `Successfully adjusted stock: ${Math.abs(quantity)} units ${action} to ${location} for ${itemName}.`, 'success');
-                e.target.reset(); // Clear form
-            } else {
-                showModal('Update Failed', result.message, 'error');
-            }
+                    // 2. Remove item field from all site stock documents
+                    await Promise.all(SITE_LOCATIONS.map(async (site) => {
+                        const siteDocRef = doc(getStockLevelsRef(), site);
+                        // Using a simple update with a sentinel value (if supported) 
+                        // or merging the whole document structure, but a transaction is safer.
+                        await updateDoc(siteDocRef, { [itemId]: deleteField() });
+                    }));
+
+                    // 3. (Optional but thorough) Clean up all transactions related to this item.
+                    // This is resource intensive, so we will skip it for this demo.
+                    
+                    messageEl.textContent = `Item "${itemId}" has been successfully deleted from all records.`;
+                    messageEl.classList.remove('hidden', 'text-red-600');
+                    messageEl.classList.add('text-green-600');
+                } catch (error) {
+                    console.error("Error deleting item:", error);
+                    messageEl.textContent = `Failed to delete item: ${error.message}`;
+                    messageEl.classList.remove('hidden', 'text-green-600');
+                    messageEl.classList.add('text-red-600');
+                } finally {
+                    showLoading(false);
+                }
+            };
         };
 
-        const renderTransactionLog = () => {
-            const items = Object.keys(stockLevels).sort();
 
-            const filteredTransactions = transactions.filter(t => {
-                let match = true;
+        // --- 13. INITIAL SETUP ---
 
-                // Item Name Filter
-                if (filterState.itemName && t.itemName !== filterState.itemName) {
-                    match = false;
-                }
-                
-                // Location Filter
-                if (filterState.location && t.location !== filterState.location) {
-                    match = false;
-                }
+        const setCurrentSite = (site) => {
+            currentSite = site;
+            document.getElementById('current-site-display').textContent = site;
+            renderSiteButtons();
+            renderStockList();
+        };
 
-                // Type Filter
-                if (filterState.type && t.type !== filterState.type) {
-                    match = false;
-                }
-
-                // Staff Name Filter (case insensitive contains)
-                if (filterState.staffName) {
-                    if (!t.staffName || !t.staffName.toLowerCase().includes(filterState.staffName.toLowerCase())) {
-                        match = false;
-                    }
-                }
-
-                // Date Filter (simple check)
-                if (t.timestamp && filterState.startDate && filterState.endDate) {
-                    const txDate = t.timestamp.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
-                    const start = new Date(filterState.startDate);
-                    const end = new Date(filterState.endDate);
-                    end.setDate(end.getDate() + 1); // Make end date inclusive
-                    
-                    if (txDate < start || txDate >= end) {
-                        match = false;
-                    }
-                }
-
-
-                return match;
+        const setupEventHandlers = () => {
+            document.getElementById('admin-login-btn').addEventListener('click', handleAdminLogin);
+            
+            // Setup tab switching logic
+            document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    setAdminTab(e.target.dataset.tab);
+                });
             });
 
-            return `
-                <h3 class="text-xl font-semibold mb-4 text-indigo-700 flex items-center">
-                    <i data-lucide="history" class="w-6 h-6 mr-2"></i> Stock Transaction Log
-                </h3>
-                <p class="text-gray-600 mb-6">Detailed record of all stock adjustments across all sites.</p>
-
-                <!-- Filters -->
-                <div class="p-4 bg-indigo-50 rounded-lg mb-6 shadow-inner border border-indigo-200">
-                    <h4 class="font-semibold text-indigo-700 mb-3">Filters</h4>
-                    <form id="transaction-filters" onchange="window.handleFilterChange(event)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                        
-                        <div>
-                            <label for="filter-itemName" class="block text-xs font-medium text-gray-700">Item Name</label>
-                            <select id="filter-itemName" class="mt-1 block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
-                                <option value="">All Items</option>
-                                ${items.map(item => `<option value="${item}" ${filterState.itemName === item ? 'selected' : ''}>${item}</option>`).join('')}
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label for="filter-location" class="block text-xs font-medium text-gray-700">Location</label>
-                            <select id="filter-location" class="mt-1 block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
-                                <option value="">All Locations</option>
-                                ${LOCATIONS.map(loc => `<option value="${loc}" ${filterState.location === loc ? 'selected' : ''}>${loc}</option>`).join('')}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label for="filter-type" class="block text-xs font-medium text-gray-700">Type</label>
-                            <select id="filter-type" class="mt-1 block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
-                                <option value="">All Types</option>
-                                ${TRANSACTION_TYPES.map(type => `<option value="${type}" ${filterState.type === type ? 'selected' : ''}>${type.replace('_', ' ')}</option>`).join('')}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label for="filter-staffName" class="block text-xs font-medium text-gray-700">Staff Name</label>
-                            <input type="text" id="filter-staffName" value="${filterState.staffName}" placeholder="e.g. Jane" class="mt-1 block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
-                        </div>
-
-                        <div class="sm:col-span-2 lg:col-span-1">
-                            <label for="filter-startDate" class="block text-xs font-medium text-gray-700">Date Range</label>
-                            <div class="flex space-x-2 mt-1">
-                                <input type="date" id="filter-startDate" value="${filterState.startDate}" class="block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
-                                <input type="date" id="filter-endDate" value="${filterState.endDate}" class="block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
-                            </div>
-                        </div>
-
-                    </form>
-                    <div class="mt-4 flex justify-end">
-                        <button onclick="window.resetFilters()" class="px-3 py-1 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 transition-colors flex items-center">
-                            <i data-lucide="refresh-cw" class="w-4 h-4 mr-1"></i> Reset Filters
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Log Table -->
-                <div class="overflow-x-auto shadow-lg rounded-lg border">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Change</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Staff</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            ${filteredTransactions.length === 0 ? `
-                                <tr>
-                                    <td colspan="6" class="px-6 py-4 text-center text-gray-500 italic">No transactions match the current filters.</td>
-                                </tr>
-                            ` : filteredTransactions.map(t => {
-                                const isRemoval = t.quantityChange < 0;
-                                const changeClass = isRemoval ? 'text-red-600 font-bold' : 'text-green-600 font-bold';
-                                return `
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formatTimestamp(t.timestamp)}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${t.itemName}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${t.location}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-right ${changeClass}">
-                                            ${t.quantityChange > 0 ? '+' : ''}${t.quantityChange}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-xs">
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRemoval ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}">
-                                                ${t.type.replace('_', ' ')}
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${t.staffName || 'N/A'}</td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
+            // Admin Action Buttons
+            document.getElementById('confirm-mass-update-btn').addEventListener('click', handleMassUpdate);
+            document.getElementById('confirm-single-update-btn').addEventListener('click', handleSingleUpdate);
+            document.getElementById('add-new-item-btn').addEventListener('click', handleAddNewItem);
+            document.getElementById('delete-item-btn').addEventListener('click', handleDeleteItem);
         };
 
-        window.handleFilterChange = (e) => {
-            if (e.target.id.startsWith('filter-')) {
-                const key = e.target.id.replace('filter-', '');
-                filterState[key] = e.target.value;
-                window.setAdminTab('transactionLog');
-            }
+        window.onload = function () {
+            // Wait for DOM to be fully loaded
+            setupEventHandlers();
+            initFirebase();
+            updateCartButton(); // Ensure cart state is reset/loaded
         };
 
-        window.resetFilters = () => {
-            filterState = {
-                itemName: '',
-                location: '',
-                type: '',
-                staffName: '',
-                startDate: '',
-                endDate: ''
-            };
-            window.setAdminTab('transactionLog');
-        };
+        // Expose hideModal for use by buttons inside modal HTML
+        window.hideModal = hideModal;
+        window.alertUser = alertUser; 
 
-        // --- Modal Component ---
-
-        const showModal = (title, content, type = 'info', sticky = false, secondaryContent = null) => {
-            let modal = document.getElementById('global-modal');
-            if (!modal) {
-                modal = document.createElement('div');
-                modal.id = 'global-modal';
-                modal.className = 'fixed inset-0 z-50 overflow-y-auto hidden';
-                document.body.appendChild(modal);
-            }
-
-            let iconHtml = '';
-            let titleClass = '';
-            
-            switch (type) {
-                case 'success':
-                    iconHtml = '<i data-lucide="check-circle" class="w-8 h-8 text-green-500"></i>';
-                    titleClass = 'text-green-700';
-                    break;
-                case 'error':
-                    iconHtml = '<i data-lucide="x-circle" class="w-8 h-8 text-red-500"></i>';
-                    titleClass = 'text-red-700';
-                    break;
-                case 'loading':
-                    iconHtml = '<svg class="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
-                    titleClass = 'text-indigo-700';
-                    break;
-                case 'info':
-                default:
-                    iconHtml = '<i data-lucide="info" class="w-8 h-8 text-indigo-500"></i>';
-                    titleClass = 'text-indigo-700';
-            }
-
-            modal.innerHTML = `
-                <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                    <div class="fixed inset-0 transition-opacity" aria-hidden="true">
-                        <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
-                    </div>
-                    <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-                    
-                    <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                            <div class="sm:flex sm:items-start">
-                                <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full sm:mx-0 sm:h-10 sm:w-10">
-                                    ${iconHtml}
-                                </div>
-                                <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                                    <h3 class="text-lg leading-6 font-medium ${titleClass}" id="modal-title">
-                                        ${title}
-                                    </h3>
-                                    <div class="mt-2 text-gray-800" id="modal-content-main">
-                                        ${content}
-                                    </div>
-                                    ${secondaryContent ? `<div class="mt-4 p-3 bg-gray-100 rounded-md border border-gray-200 text-sm max-h-40 overflow-y-auto">${secondaryContent}</div>` : ''}
-                                </div>
-                            </div>
-                        </div>
-                        
-                        ${type !== 'loading' && !sticky ? `
-                            <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                                <button type="button" onclick="window.closeModal()" 
-                                        class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">
-                                    Close
-                                </button>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-            lucide.createIcons();
-            modal.classList.remove('hidden');
-        };
-
-        window.closeModal = () => {
-            const modal = document.getElementById('global-modal');
-            if (modal) {
-                modal.classList.add('hidden');
-            }
-        };
-
-
-        // --- Startup ---
-        window.onload = initFirebase;
     </script>
 </body>
 </html>
