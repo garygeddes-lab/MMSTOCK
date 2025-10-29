@@ -1581,6 +1581,9 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
         initializeFirebase();
     </script>
 
+
+
+
 <script>
 window.toggleAdminLogin = function () {
   const modal = document.getElementById('admin-login-modal');
@@ -1603,6 +1606,15 @@ window.adminLogin = function () {
   if (password === 'admin123') {
     if (modal) modal.classList.add('hidden');
     document.body.classList.add('admin-active');
+
+    // ✅ Automatically switch to the admin panel tab
+    const adminTabButton = document.querySelector('[data-tab="admin"]');
+    if (adminTabButton) {
+      adminTabButton.click();
+    } else {
+      console.warn("Admin tab button not found");
+    }
+
   } else {
     if (error) error.classList.remove('hidden');
   }
