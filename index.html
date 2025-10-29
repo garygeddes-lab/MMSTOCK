@@ -138,7 +138,8 @@
                                 <option value="">Filter by Location</option>
                                 <!-- Options populated by JS -->
                             </select>
-                            <input type="date" id="log-filter-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
+                            <input type="date" id="log-filter-start-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="Start Date">
+<input type="date" id="log-filter-end-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="End Date">
                             <button onclick="applyLogFilters()" class="py-2 px-4 bg-primary-purple text-white rounded-lg hover:bg-primary-purple/90 transition duration-150">Apply Filters</button>
                             <button onclick="exportLog()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Download Log (CSV)</button>
                         </div>
@@ -1586,5 +1587,129 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
 
         initializeFirebase();
     </script>
+
+<script>
+(function(){
+  function qs(sel){ return document.querySelector(sel); }
+  function qsa(sel){ return Array.from(document.querySelectorAll(sel)); }
+
+  // --- Admin Tab Switching ---
+  window.showAdminTab = function(tabName){
+    const sections = qsa('.admin-tab-content');
+    sections.forEach(s => s.classList.add('hidden'));
+    const active = document.getElementById('admin-tab-' + tabName);
+    if (active) active.classList.remove('hidden');
+
+    const buttons = qsa('.admin-nav-item');
+    buttons.forEach(b => b.classList.remove('active'));
+    const targetBtn = buttons.find(b => (b.getAttribute('onclick')||'').includes("'" + tabName + "'"));
+    if (targetBtn) targetBtn.classList.add('active');
+  };
+
+  // --- Admin Login Modal toggle ---
+  window.toggleAdminLogin = function(){
+    const modal = qs('#admin-login-modal');
+    const err = qs('#login-error');
+    if(!modal) return;
+    if(modal.classList.contains('hidden')){
+      modal.classList.remove('hidden');
+      const pwd = qs('#admin-password');
+      if(pwd) pwd.value = '';
+      if(err) err.classList.add('hidden');
+    } else {
+      modal.classList.add('hidden');
+    }
+  };
+
+  // --- Admin Login (password: admin123) ---
+  window.adminLogin = function(){
+    const pwd = (qs('#admin-password')?.value || '').trim();
+    const err = qs('#login-error');
+    if(pwd === 'admin123'){
+      const modal = qs('#admin-login-modal');
+      if(modal) modal.classList.add('hidden');
+      const adminPanel = qs('#admin-panel');
+      const staffView = qs('#staff-view');
+      const summaryCard = qs('#summary-card');
+      if(adminPanel) adminPanel.classList.remove('hidden');
+      if(staffView) staffView.classList.add('hidden');
+      if(summaryCard) summaryCard.classList.add('hidden');
+      window.showAdminTab('log');
+    } else {
+      if(err) err.classList.remove('hidden');
+    }
+  };
+
+  // --- Robust date-range Apply Filters override ---
+  window.applyLogFilters = function(){
+    try{
+      const staffFilter = (qs('#log-filter-staff')?.value || '').toLowerCase();
+      const locationFilter = (qs('#log-filter-location')?.value || '');
+      const startDate = qs('#log-filter-start-date')?.value || '';
+      const endDate = qs('#log-filter-end-date')?.value || '';
+
+      if(!window.transactions || !Array.isArray(window.transactions)){
+        return;
+      }
+
+      const filtered = window.transactions.filter(t => {
+        const staffMatch = staffFilter ? (t.staffName || '').toLowerCase().includes(staffFilter) : true;
+        const locationMatch = locationFilter ? (t.location === locationFilter) : true;
+
+        let dateMatch = true;
+        if((startDate || endDate) && t.timestamp){
+          const txDate = new Date(t.timestamp.seconds * 1000);
+          const s = startDate ? new Date(startDate) : new Date(0);
+          const e = endDate ? new Date(endDate) : new Date();
+          const eInclusive = new Date(e.getTime() + 86400000 - 1);
+          dateMatch = txDate >= s && txDate <= eInclusive;
+        }
+        return staffMatch && locationMatch && dateMatch;
+      });
+
+      if(typeof window.renderTransactionLog === 'function'){
+        window.renderTransactionLog(filtered);
+      }
+    }catch(e){
+      console.error('applyLogFilters error', e);
+    }
+  };
+
+  // --- Ensure checkout modal shows items to remove ---
+  window.openCheckoutModal = function(){
+    try{
+      const list = qs('#checkout-cart-list');
+      if(list && window.removalCart && window.items){
+        const entries = Object.entries(window.removalCart).filter(([id,qty]) => qty>0);
+        if(entries.length === 0){
+          list.innerHTML = '<li class="text-gray-500 italic">No items selected for removal.</li>';
+        }else{
+          list.innerHTML = entries.map(([id,qty]) => {
+            const itemName = (window.items.find(i => i.id === id)?.name) || 'Unknown Item';
+            return `<li>${itemName} — <strong>${qty}</strong></li>`;
+          }).join('');
+        }
+      }
+    }catch(e){
+      console.error('openCheckoutModal render error', e);
+    }
+    const modal = qs('#checkout-modal');
+    if(modal) modal.classList.remove('hidden');
+  };
+
+  // Optional: expose logout handler if missing
+  if(typeof window.adminLogout !== 'function'){
+    window.adminLogout = function(){
+      const adminPanel = qs('#admin-panel');
+      const staffView = qs('#staff-view');
+      const summaryCard = qs('#summary-card');
+      if(adminPanel) adminPanel.classList.add('hidden');
+      if(staffView) staffView.classList.remove('hidden');
+      if(summaryCard) summaryCard.classList.remove('hidden');
+    };
+  }
+})();
+</script>
+
 </body>
 </html>
