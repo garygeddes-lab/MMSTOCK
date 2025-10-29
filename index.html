@@ -54,6 +54,7 @@
                     <select id="site-select" class="input-text w-full sm:w-auto"></select>
                 </div>
                 <div>
+                    <!-- Admin password is 'admin' -->
                     <button id="admin-mode-toggle" class="btn-primary">Admin Mode: Off</button>
                 </div>
             </div>
@@ -107,11 +108,28 @@
         </div>
     </div>
 
+    <!-- Custom Modal Structure (Replaces alert, confirm, and prompt) -->
+    <div id="custom-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
+        <div class="card p-6 w-11/12 max-w-md" role="alertdialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-message">
+            <h3 id="modal-title" class="text-xl font-bold mb-3 text-gray-800"></h3>
+            <p id="modal-message" class="text-gray-600 mb-6"></p>
+
+            <div id="modal-input-container" class="mb-4 hidden">
+                <input type="password" id="modal-input" class="input-text" placeholder="Enter password" autocomplete="off">
+            </div>
+
+            <div id="modal-actions" class="flex justify-end space-x-3">
+                <button id="modal-cancel-btn" class="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100 hidden">Cancel</button>
+                <button id="modal-confirm-btn" class="btn-primary">OK</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, collection, query, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, collection, query, writeBatch, runTransaction, setDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Global state for application
         let firebaseApp, db, auth, userId = null;
@@ -125,7 +143,7 @@
         const sites = ['Dundee', 'Perth', 'Edinburgh', 'Glasgow'];
         const pendingRemoval = {}; // { itemId: quantity }
 
-        // --- Core Firebase Setup ---
+        // --- Core Firebase Setup & Global Elements ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -147,12 +165,59 @@
             loadingEl.classList.add('hidden');
         }
 
+        // --- Custom Modal (Replaces alert, confirm, prompt) ---
+        function showCustomModal({ title, message, type = 'alert', onSubmit = () => {}, onCancel = () => {} }) {
+            const modalEl = document.getElementById('custom-modal');
+            const titleEl = document.getElementById('modal-title');
+            const messageEl = document.getElementById('modal-message');
+            const inputContainerEl = document.getElementById('modal-input-container');
+            const inputEl = document.getElementById('modal-input');
+            const confirmBtn = document.getElementById('modal-confirm-btn');
+            const cancelBtn = document.getElementById('modal-cancel-btn');
+
+            // Reset UI
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+            inputContainerEl.classList.add('hidden');
+            cancelBtn.classList.add('hidden');
+            confirmBtn.className = 'btn-primary';
+            inputEl.value = '';
+            
+            // Setup based on type
+            if (type === 'confirm' || type === 'prompt') {
+                cancelBtn.classList.remove('hidden');
+                confirmBtn.textContent = (type === 'confirm') ? 'Confirm' : 'Submit';
+                confirmBtn.className = type === 'confirm' ? 'btn-danger' : 'btn-primary';
+            } else {
+                confirmBtn.textContent = 'OK';
+            }
+
+            if (type === 'prompt') {
+                inputContainerEl.classList.remove('hidden');
+                inputEl.focus();
+                inputEl.type = title.toLowerCase().includes("password") ? "password" : "text"; // Set input type dynamically
+            }
+
+            // Handlers
+            confirmBtn.onclick = () => {
+                modalEl.classList.add('hidden');
+                const result = type === 'prompt' ? inputEl.value : true;
+                onSubmit(result);
+            };
+
+            cancelBtn.onclick = () => {
+                modalEl.classList.add('hidden');
+                onCancel();
+            };
+
+            modalEl.classList.remove('hidden');
+        }
+
+
         // --- Initialization ---
         async function initializeFirebase() {
             if (!firebaseConfig) {
                 authStatusEl.textContent = 'Firebase Config Missing. Using Anonymous Fallback.';
-                // We cannot proceed without a config, even a fallback is not possible
-                // If config is missing, the application will not run. We must wait for the environment.
                 displayError("Firebase configuration is missing. Cannot initialize Firestore.");
                 return;
             }
@@ -162,7 +227,7 @@
                 firebaseApp = initializeApp(firebaseConfig);
                 db = getFirestore(firebaseApp);
                 auth = getAuth(firebaseApp);
-                setLogLevel('error'); // Only log errors to keep console clean
+                // Removed setLogLevel('error') to allow debug messages to show in console
 
                 // Sign in with platform token or anonymously
                 if (initialAuthToken) {
@@ -187,7 +252,7 @@
                         mainViewEl.classList.remove('hidden');
                         loadingEl.classList.add('hidden');
                     } else {
-                         // Should not happen as we force anonymous sign-in
+                        // Should not happen as we force anonymous sign-in
                         displayError("Authentication failed. Cannot access Firestore.");
                     }
                 });
@@ -200,44 +265,45 @@
 
         // --- Data Seeding ---
         async function seedDefaultData() {
-            const itemColRef = collection(db, itemDefsPath);
-            const itemsSnapshot = await getDocs(itemColRef);
+            // Check if item definitions exist before seeding
+            try {
+                const itemColRef = collection(db, itemDefsPath);
+                const itemsSnapshot = await getDocs(itemColRef);
 
-            if (itemsSnapshot.empty) {
-                console.log("Seeding default data...");
-                const batch = writeBatch(db);
+                if (itemsSnapshot.empty) {
+                    console.log("Seeding default data...");
+                    const batch = writeBatch(db);
 
-                const defaultItems = [
-                    { id: 'item_gloves', name: 'Safety Gloves', threshold: 50 },
-                    { id: 'item_glasses', name: 'Safety Glasses', threshold: 30 },
-                    { id: 'item_hats', name: 'Hard Hats', threshold: 25 }
-                ];
+                    const defaultItems = [
+                        { id: 'item_gloves', name: 'Safety Gloves', threshold: 50 },
+                        { id: 'item_glasses', name: 'Safety Glasses', threshold: 30 },
+                        { id: 'item_hats', name: 'Hard Hats', threshold: 25 }
+                    ];
 
-                defaultItems.forEach(item => {
-                    const itemRef = doc(db, `${itemDefsPath}/${item.id}`);
-                    batch.set(itemRef, { name: item.name, threshold: item.threshold, id: item.id });
-                });
-
-                // Set initial stock (100 for all items, all sites)
-                const initialStock = {};
-                sites.forEach(site => {
-                    initialStock[site] = {};
                     defaultItems.forEach(item => {
-                        initialStock[site][item.id] = 100;
+                        const itemRef = doc(db, `${itemDefsPath}/${item.id}`);
+                        batch.set(itemRef, { name: item.name, threshold: item.threshold, id: item.id });
                     });
-                });
 
-                const stockRef = doc(db, stockLevelsDocPath);
-                batch.set(stockRef, initialStock);
+                    // Set initial stock (100 for all items, all sites)
+                    const initialStock = {};
+                    sites.forEach(site => {
+                        initialStock[site] = {};
+                        defaultItems.forEach(item => {
+                            initialStock[site][item.id] = 100;
+                        });
+                    });
 
-                try {
+                    const stockRef = doc(db, stockLevelsDocPath);
+                    batch.set(stockRef, initialStock);
+
                     await batch.commit();
                     console.log("Default data seeded successfully.");
-                } catch (e) {
-                    displayError(`Failed to seed data: ${e.message}`);
+                } else {
+                    console.log("Existing data found. Skipping seed.");
                 }
-            } else {
-                console.log("Existing data found. Skipping seed.");
+            } catch (e) {
+                displayError(`Failed to seed data: ${e.message}`);
             }
         }
 
@@ -261,7 +327,7 @@
                     siteData = docSnapshot.data();
                 } else {
                     siteData = {};
-                    console.warn("Stock levels document does not exist.");
+                    console.warn("Stock levels document does not exist. Creating default document if necessary.");
                 }
                 renderStockTable();
             }, (error) => displayError(`Error loading stock levels: ${error.message}`));
@@ -298,8 +364,6 @@
 
             } catch (e) {
                 displayError(`Transaction Failed (Stock Update): ${e.message}`);
-                // Re-enable buttons if transaction failed
-                document.querySelectorAll('button[data-action]').forEach(btn => btn.disabled = false);
             }
         }
 
@@ -323,6 +387,7 @@
         function renderStockTable() {
             const tableBody = document.querySelector('#stock-table tbody');
             tableBody.innerHTML = '';
+            // Sort items alphabetically by name
             const itemIds = Object.keys(itemDefinitions).sort((a, b) => itemDefinitions[a].name.localeCompare(itemDefinitions[b].name));
 
             if (itemIds.length === 0) {
@@ -337,17 +402,18 @@
                 const isLow = currentStock <= item.threshold;
 
                 const row = document.createElement('tr');
-                row.className = isLow ? 'low-stock' : '';
+                // Use default class if not low stock, otherwise apply low-stock style
+                row.className = isLow ? 'low-stock' : 'bg-white'; 
 
                 row.innerHTML = `
                     <td>${item.name}</td>
                     <td>${currentStock}</td>
                     <td>${item.threshold}</td>
                     <td>
-                        <div class="flex space-x-2 items-center">
-                            <input type="number" data-item-id="${itemId}" class="input-text w-20 text-center quantity-input" placeholder="Qty" value="1">
-                            <button class="btn-primary restock-btn" data-item-id="${itemId}">Restock</button>
-                            <button class="btn-danger remove-btn" data-item-id="${itemId}">Remove</button>
+                        <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 items-center">
+                            <input type="number" data-item-id="${itemId}" class="input-text w-20 text-center quantity-input" placeholder="Qty" value="1" min="1">
+                            <button class="btn-primary restock-btn whitespace-nowrap" data-item-id="${itemId}">Restock</button>
+                            <button class="btn-danger remove-btn whitespace-nowrap" data-item-id="${itemId}">Remove</button>
                         </div>
                     </td>
                 `;
@@ -359,7 +425,7 @@
             document.querySelectorAll('.remove-btn').forEach(btn => btn.addEventListener('click', handleStageRemoval));
         }
 
-        // --- Event Handlers ---
+        // --- Stock Action Handlers ---
 
         function getQuantity(itemId) {
             const input = document.querySelector(`.quantity-input[data-item-id="${itemId}"]`);
@@ -376,6 +442,20 @@
         function handleStageRemoval(e) {
             const itemId = e.target.getAttribute('data-item-id');
             const quantity = getQuantity(itemId);
+            
+            // Check if there is enough stock before staging for removal
+            const availableStock = (siteData[currentSite] && siteData[currentSite][itemId]) || 0;
+            const currentlyStaged = pendingRemoval[itemId] || 0;
+            const potentialNewStock = availableStock - currentlyStaged - quantity;
+
+            if (potentialNewStock < 0) {
+                return showCustomModal({
+                    title: "Stock Limit Reached",
+                    message: `Cannot stage ${quantity} of ${itemDefinitions[itemId].name} for removal. You only have ${availableStock - currentlyStaged} items remaining after considering the current cart.`,
+                    type: 'alert'
+                });
+            }
+
 
             if (pendingRemoval[itemId]) {
                 pendingRemoval[itemId] += quantity;
@@ -384,14 +464,16 @@
             }
 
             // Clear input after staging
-            document.querySelector(`.quantity-input[data-item-id="${itemId}"]`).value = 1;
+            const inputEl = document.querySelector(`.quantity-input[data-item-id="${itemId}"]`);
+            if(inputEl) inputEl.value = 1;
+
             updateRemovalCartUI();
         }
 
         function updateRemovalCartUI() {
             const listEl = document.getElementById('pending-list');
             const confirmBtn = document.getElementById('confirm-removal-btn');
-            const itemIds = Object.keys(pendingRemoval);
+            const itemIds = Object.keys(pendingRemoval).filter(id => pendingRemoval[id] > 0);
             let totalItems = 0;
 
             listEl.innerHTML = '';
@@ -415,7 +497,7 @@
                     const div = document.createElement('div');
                     div.className = 'pending-removal-item p-3 flex justify-between items-center rounded';
                     div.innerHTML = `
-                        <span>${item ? item.name : itemId} (${currentSite}): <strong>${quantity}</strong> removed</span>
+                        <span>${item ? item.name : itemId} (${currentSite}): <strong>${quantity}</strong> staged</span>
                         <button class="text-sm text-red-600 hover:text-red-800 clear-item-btn" data-item-id="${itemId}">Clear</button>
                     `;
                     listEl.appendChild(div);
@@ -432,15 +514,17 @@
             }));
         }
 
-        // --- Confirm Removal Handler (Batch Write) ---
+        // --- Confirm Removal Handler (Batch Write Transaction) ---
         document.getElementById('confirm-removal-btn').addEventListener('click', async () => {
             if (!isAuthReady || isBatching) return;
             isBatching = true;
             document.getElementById('confirm-removal-btn').disabled = true;
+            document.getElementById('confirm-removal-btn').textContent = 'Processing...';
 
+            // Clone and clear cart *before* transaction attempt
             const itemsToCommit = { ...pendingRemoval };
             Object.keys(pendingRemoval).forEach(key => delete pendingRemoval[key]);
-            updateRemovalCartUI(); // Clear cart UI immediately
+            updateRemovalCartUI(); 
 
             const stockRef = doc(db, stockLevelsDocPath);
 
@@ -465,29 +549,43 @@
                 console.log(`Batch removal committed successfully.`);
             } catch (e) {
                 displayError(`Transaction Failed (Batch Removal): ${e.message}`);
-                // In a real app, you might want to restore the pending items here.
+                // In a real application, you'd re-add the items to pendingRemoval if the transaction failed, 
+                // but for simplicity here, we rely on the error logging.
             } finally {
                 isBatching = false;
-                document.getElementById('confirm-removal-btn').disabled = false;
+                // Re-rendering the table/cart takes care of updating the button state.
             }
         });
 
         // --- Admin Mode Logic ---
 
         document.getElementById('admin-mode-toggle').addEventListener('click', () => {
-            const password = prompt("Enter Admin Password:");
-            if (password === 'admin') {
-                adminMode = true;
-                document.getElementById('admin-mode-toggle').textContent = 'Admin Mode: On (Click to exit)';
-                document.getElementById('admin-panel').classList.remove('hidden');
-                renderAdminPanel();
-            } else if (adminMode) {
+            if (adminMode) {
                 adminMode = false;
                 document.getElementById('admin-mode-toggle').textContent = 'Admin Mode: Off';
                 document.getElementById('admin-panel').classList.add('hidden');
-            } else {
-                alert("Incorrect password.");
+                return;
             }
+
+            showCustomModal({
+                title: "Admin Access Required",
+                message: "Please enter the admin password to manage item definitions. (Hint: 'admin')",
+                type: 'prompt',
+                onSubmit: (password) => {
+                    if (password === 'admin') {
+                        adminMode = true;
+                        document.getElementById('admin-mode-toggle').textContent = 'Admin Mode: On (Click to exit)';
+                        document.getElementById('admin-panel').classList.remove('hidden');
+                        renderAdminPanel();
+                    } else {
+                        showCustomModal({
+                            title: "Access Denied",
+                            message: "The password entered was incorrect.",
+                            type: 'alert'
+                        });
+                    }
+                }
+            });
         });
 
         function renderAdminPanel() {
@@ -502,8 +600,8 @@
                 div.innerHTML = `
                     <input type="text" data-field="name" value="${item.name}" placeholder="Item Name" class="input-text flex-grow">
                     <input type="number" data-field="threshold" value="${item.threshold}" placeholder="Threshold" class="input-text w-full sm:w-32">
-                    <button class="btn-primary save-def-btn" data-item-id="${itemId}">Save</button>
-                    <button class="btn-danger delete-def-btn" data-item-id="${itemId}">Delete</button>
+                    <button class="btn-primary save-def-btn w-full sm:w-24" data-item-id="${itemId}">Save</button>
+                    <button class="btn-danger delete-def-btn w-full sm:w-24" data-item-id="${itemId}">Delete</button>
                 `;
                 listEl.appendChild(div);
             });
@@ -515,11 +613,15 @@
         async function handleSaveItemDefinition(e) {
             const itemId = e.target.getAttribute('data-item-id');
             const parent = e.target.closest('div');
-            const newName = parent.querySelector('[data-field="name"]').value;
+            const newName = parent.querySelector('[data-field="name"]').value.trim();
             const newThreshold = parseInt(parent.querySelector('[data-field="threshold"]').value, 10);
 
             if (!newName || isNaN(newThreshold) || newThreshold < 0) {
-                return alert("Please enter a valid name and a non-negative threshold.");
+                return showCustomModal({
+                    title: "Invalid Input",
+                    message: "Please enter a valid item name and a non-negative threshold.",
+                    type: 'alert'
+                });
             }
 
             const itemRef = doc(db, `${itemDefsPath}/${itemId}`);
@@ -540,7 +642,11 @@
             const threshold = parseInt(thresholdEl.value, 10);
 
             if (!name || isNaN(threshold) || threshold < 0) {
-                return alert("Please enter a valid item name and a non-negative threshold.");
+                return showCustomModal({
+                    title: "Invalid Input",
+                    message: "Please enter a valid item name and a non-negative threshold.",
+                    type: 'alert'
+                });
             }
 
             const itemId = 'item_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
@@ -554,15 +660,14 @@
 
                     // 2. Update Stock Levels for all sites
                     const stockDoc = await transaction.get(stockRef);
-                    if (stockDoc.exists()) {
-                        const currentLevels = stockDoc.data();
-                        sites.forEach(site => {
-                            if (!currentLevels[site]) currentLevels[site] = {};
-                            // Set initial stock to 100 for the new item at all sites
-                            currentLevels[site][itemId] = 100;
-                        });
-                        transaction.set(stockRef, currentLevels);
-                    }
+                    const currentLevels = stockDoc.exists() ? stockDoc.data() : {};
+                    
+                    sites.forEach(site => {
+                        if (!currentLevels[site]) currentLevels[site] = {};
+                        // Set initial stock to 100 for the new item at all sites
+                        currentLevels[site][itemId] = 100;
+                    });
+                    transaction.set(stockRef, currentLevels);
                 });
 
                 nameEl.value = '';
@@ -572,13 +677,9 @@
                 displayError(`Failed to add new item in transaction: ${e.message}`);
             }
         });
-
-        async function handleDeleteItemDefinition(e) {
-            const itemId = e.target.getAttribute('data-item-id');
-            if (!confirm(`Are you sure you want to delete ${itemDefinitions[itemId]?.name}? This will remove it from all sites.`)) {
-                return;
-            }
-
+        
+        // Extracted transaction logic for deletion
+        async function performDeletion(itemId) {
             const itemDefRef = doc(db, `${itemDefsPath}/${itemId}`);
             const stockRef = doc(db, stockLevelsDocPath);
 
@@ -587,7 +688,7 @@
                     // 1. Delete Item Definition
                     transaction.delete(itemDefRef);
 
-                    // 2. Remove Item from Stock Levels
+                    // 2. Remove Item from Stock Levels across all sites
                     const stockDoc = await transaction.get(stockRef);
                     if (stockDoc.exists()) {
                         const currentLevels = stockDoc.data();
@@ -604,6 +705,24 @@
                 displayError(`Failed to delete item in transaction: ${e.message}`);
             }
         }
+
+        function handleDeleteItemDefinition(e) {
+            const itemId = e.target.getAttribute('data-item-id');
+            const itemName = itemDefinitions[itemId]?.name || itemId;
+
+            showCustomModal({
+                title: "Confirm Deletion",
+                message: `Are you absolutely sure you want to delete "${itemName}"? This action is permanent and will remove the item from ALL sites.`,
+                type: 'confirm',
+                onSubmit: () => {
+                    performDeletion(itemId);
+                },
+                onCancel: () => {
+                    console.log("Deletion cancelled.");
+                }
+            });
+        }
+
 
         // Initial setup call
         loadingEl.classList.remove('hidden');
