@@ -3,711 +3,612 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stock Manager</title>
-    <!-- Load Tailwind CSS -->
+    <title>Site Stock Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .card { @apply bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg transition-all duration-300; }
-        .btn-primary { @apply bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150; }
+        :root {
+            --primary: #4f46e5;
+            --primary-light: #6366f1;
+            --danger: #ef4444;
+            --danger-light: #f87171;
+            --success: #10b981;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .card { background-color: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); }
+        .btn-primary { background-color: var(--primary); color: white; padding: 8px 16px; border-radius: 8px; transition: background-color 0.2s; }
+        .btn-primary:hover { background-color: var(--primary-light); }
+        .btn-danger { background-color: var(--danger); color: white; padding: 8px 16px; border-radius: 8px; transition: background-color 0.2s; }
+        .btn-danger:hover { background-color: var(--danger-light); }
+        .input-text { border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 8px; width: 100%; }
+        .low-stock { background-color: #fee2e2; color: #991b1b; font-weight: 600; }
+        .pending-removal-item { background-color: #fffbeb; border-left: 4px solid #f59e0b; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        th, td { padding: 12px 16px; text-align: left; }
+        th { background-color: #e5e7eb; font-weight: 700; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+        tr:nth-child(even) { background-color: #f9fafb; }
+        tr:last-child td:first-child { border-bottom-left-radius: 8px; }
+        tr:last-child td:last-child { border-bottom-right-radius: 8px; }
+        .table-container { overflow-x: auto; }
     </style>
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white min-h-screen p-4 sm:p-8">
+<body class="p-4 sm:p-8">
 
-    <div id="app" class="max-w-6xl mx-auto space-y-6">
-        <h1 class="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400 text-center">
-            Site Stock Management
-        </h1>
+    <div id="app" class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">Site Stock Management Dashboard</h1>
 
-        <!-- Loading State / Status Card (Visible by default) -->
-        <div id="status-card" class="card text-center bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-            <div id="loader" class="flex justify-center items-center space-x-3">
-                <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-indigo-500"></div>
-                <p id="status-message" class="text-lg font-medium text-gray-600 dark:text-gray-300">
-                    Loading Stock Data and Connecting to Database...
-                </p>
-            </div>
-            <p id="user-id-display" class="mt-2 text-sm text-gray-500 dark:text-gray-400 hidden">
-                User ID: <span class="font-mono text-xs"></span>
-            </p>
+        <div id="auth-status" class="mb-4 text-sm text-gray-600">
+            Connecting to database...
         </div>
+        <div id="loading" class="text-center py-8 text-lg font-medium text-indigo-600 hidden">
+            <div class="animate-spin inline-block w-6 h-6 border-4 border-indigo-500 border-t-transparent rounded-full mr-2"></div>
+            Loading stock data...
+        </div>
+        <div id="error-message" class="card p-4 mb-4 bg-red-100 text-red-700 hidden"></div>
 
-        <!-- Main Application Interface (Hidden until connected) -->
-        <div id="main-content" class="hidden space-y-6">
-            
-            <!-- Site Selector and Login -->
-            <div class="card flex flex-col md:flex-row items-center justify-between">
-                <div class="flex items-center space-x-4 mb-4 md:mb-0 w-full md:w-auto">
-                    <label for="site-select" class="font-semibold text-lg">Current Site:</label>
-                    <select id="site-select" class="p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"></select>
-                    <button id="admin-toggle" class="bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-2 px-4 rounded-lg transition duration-150">
-                        Admin Mode: <span id="admin-status">Off</span>
-                    </button>
+        <!-- Main Stock View -->
+        <div id="main-view" class="space-y-6 hidden">
+            <div class="card p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                <div class="mb-4 sm:mb-0">
+                    <label for="site-select" class="block text-sm font-medium text-gray-700 mb-1">Current Site</label>
+                    <select id="site-select" class="input-text w-full sm:w-auto"></select>
                 </div>
-                <div id="admin-login-area" class="hidden mt-4 md:mt-0 w-full md:w-auto">
-                    <input type="password" id="admin-password" placeholder="Admin Password" class="p-2 border rounded-lg w-full md:w-48 bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600">
+                <div>
+                    <button id="admin-mode-toggle" class="btn-primary">Admin Mode: Off</button>
                 </div>
             </div>
 
-            <!-- Stock Levels Table -->
-            <div class="card overflow-x-auto">
-                <h2 class="text-2xl font-bold mb-4 border-b pb-2 border-indigo-200 dark:border-indigo-800">Stock Overview (<span id="current-site-name">...</span>)</h2>
-                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <div class="card table-container">
+                <table id="stock-table" class="min-w-full">
                     <thead>
-                        <tr class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            <th class="px-6 py-3">Item Name</th>
-                            <th class="px-6 py-3 text-right">Stock Level</th>
-                            <th class="px-6 py-3 text-right">Threshold</th>
-                            <th id="cart-header" class="px-6 py-3 text-center hidden">Remove Quantity</th>
-                            <th id="action-header" class="px-6 py-3 text-center hidden">Action</th>
+                        <tr>
+                            <th class="rounded-tl-lg">Item</th>
+                            <th>Current Stock</th>
+                            <th>Low Threshold</th>
+                            <th class="rounded-tr-lg">Action</th>
                         </tr>
                     </thead>
-                    <tbody id="stock-table-body" class="divide-y divide-gray-200 dark:divide-gray-700">
-                        <!-- Stock rows will be dynamically inserted here -->
+                    <tbody>
+                        <!-- Stock rows will be inserted here -->
                     </tbody>
                 </table>
             </div>
-            
-            <!-- Transaction Area (Visible only when items are in cart) -->
-            <div id="transaction-area" class="card hidden">
-                <h2 class="text-2xl font-bold mb-4 text-red-600 dark:text-red-400 border-b pb-2 border-red-200 dark:border-red-800">Pending Removal</h2>
-                <div id="cart-summary" class="mb-4"></div>
-                <button id="confirm-removal-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150 mr-4">
-                    Confirm Removal of <span id="cart-count">0</span> Items
-                </button>
-                <button id="clear-cart-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150">
-                    Clear Cart
-                </button>
-            </div>
 
-             <!-- Admin Panel (Items Management) - Hidden by default -->
-            <div id="admin-panel" class="card hidden">
-                <h2 class="text-2xl font-bold mb-4 border-b pb-2 border-emerald-200 dark:border-emerald-800">Admin: Item Definitions</h2>
-                <p class="text-sm text-red-400 mb-4">Warning: Editing item definitions globally affects all sites.</p>
-                <div id="admin-items-list" class="space-y-4">
-                    <!-- Item definition editing forms will go here -->
+            <!-- Pending Removal Cart -->
+            <div id="removal-cart" class="card p-5 hidden">
+                <h3 class="text-xl font-semibold mb-3 border-b pb-2 text-gray-800">Pending Removal</h3>
+                <div id="pending-list" class="space-y-3 mb-4">
+                    <p class="text-gray-500" id="empty-cart-message">No items staged for removal.</p>
                 </div>
-                <button id="add-new-item-btn" class="mt-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150">
-                    Add New Item
+                <button id="confirm-removal-btn" class="btn-danger w-full sm:w-auto" disabled>
+                    Confirm Removal of 0 Items
                 </button>
             </div>
+        </div>
 
+        <!-- Admin Panel (Initially Hidden) -->
+        <div id="admin-panel" class="mt-8 card p-5 space-y-4 hidden">
+            <h2 class="text-2xl font-bold text-gray-800">Admin Panel (Manage Items)</h2>
+
+            <!-- Item List -->
+            <div id="admin-item-list" class="space-y-3">
+                <!-- Item management rows will be inserted here -->
+            </div>
+
+            <!-- Add New Item Form -->
+            <div class="pt-4 border-t mt-4">
+                <h3 class="text-xl font-semibold mb-3">Add New Item</h3>
+                <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+                    <input type="text" id="new-item-name" placeholder="Item Name (e.g., Safety Goggles)" class="input-text flex-grow">
+                    <input type="number" id="new-item-threshold" placeholder="Low Threshold (e.g., 50)" value="50" class="input-text w-full sm:w-40">
+                    <button id="add-new-item-btn" class="btn-primary w-full sm:w-auto">Add Item</button>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Firebase SDK Imports -->
+    <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // Import Auth utilities, but only call them if not in fallback mode
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, query, writeBatch, Timestamp, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Enable Firebase debug logging
-        setLogLevel('debug');
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, collection, query, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-
-        // --- 1. USER'S APP CONFIGURATION & GLOBAL STATE ---
-        
-        // Configuration fallback. We use a MINIMAL configuration to prevent the Firebase SDK 
-        // from initializing Authentication, which is causing the 400 error.
-        const LIVE_FIREBASE_CONFIG_FALLBACK = {
-            projectId: "mmstock-fallback",
-        };
-        
-        // --- ADMIN CONFIGURATION ---
-        const ADMIN_PASSWORD = 'admin'; // Hardcoded password for quick access
-        const SITE_LOCATIONS = ['Dundee', 'Perth', 'Fife', 'Aberdeen', 'Glasgow'];
-        const DEFAULT_ITEMS = [
-            { id: 'item_glove_m', name: 'Gloves-Medium', threshold: 25 },
-            { id: 'item_safety_g', name: 'Safety Glasses', threshold: 50 },
-            { id: 'item_hard_hat_w', name: 'Hard Hats-White', threshold: 10 },
-            { id: 'item_mask_n95', name: 'Dust Masks-N95', threshold: 100 },
-        ];
-        
-        // --- GLOBAL STATE & FIREBASE INSTANCES ---
-        let app, db, auth;
-        let userId = 'loading...';
+        // Global state for application
+        let firebaseApp, db, auth, userId = null;
         let isAuthReady = false;
-        let isAdmin = false;
+        let siteData = {}; // Stores all stock levels: { siteId: { itemId: quantity } }
+        let itemDefinitions = {}; // Stores item details: { itemId: { name: '...', threshold: 50 } }
+        let currentSite = 'Dundee';
+        let isBatching = false;
+        let adminMode = false;
 
-        let currentSite = SITE_LOCATIONS[0];
-        let stockData = {}; // Stores all stock levels: {itemId: {Dundee: 100, Perth: 50, ...}}
-        let itemNames = {}; // Stores all item metadata: {itemId: {name: 'Gloves-M', threshold: 25, docId: '...'}}
-        let itemCart = {}; // Stores items being removed: {itemId: count}
+        const sites = ['Dundee', 'Perth', 'Edinburgh', 'Glasgow'];
+        const pendingRemoval = {}; // { itemId: quantity }
 
-        // --- 2. FIREBASE REFERENCE HELPERS (Using the MANDATORY __app_id) ---
-        let appId = ''; // Will be set in setupFirebase
+        // --- Core Firebase Setup ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // Using PUBLIC collection paths for shared data
-        const getStockLevelsRef = () => collection(db, `artifacts/${appId}/public/data/stock_levels`);
-        const getItemsRef = () => collection(db, `artifacts/${appId}/public/data/items`);
-        const getTransactionsRef = () => collection(db, `artifacts/${appId}/public/data/stock_transactions`);
+        const authStatusEl = document.getElementById('auth-status');
+        const loadingEl = document.getElementById('loading');
+        const errorEl = document.getElementById('error-message');
+        const mainViewEl = document.getElementById('main-view');
 
-        // --- 3. UI ELEMENT REFERENCES ---
-        const statusCard = document.getElementById('status-card');
-        const loader = document.getElementById('loader');
-        const statusMessage = document.getElementById('status-message');
-        const mainContent = document.getElementById('main-content');
-        const siteSelect = document.getElementById('site-select');
-        const currentSiteName = document.getElementById('current-site-name');
-        const stockTableBody = document.getElementById('stock-table-body');
-        const adminToggleBtn = document.getElementById('admin-toggle');
-        const adminStatusSpan = document.getElementById('admin-status');
-        const adminPasswordInput = document.getElementById('admin-password');
-        const adminLoginArea = document.getElementById('admin-login-area');
-        const adminPanel = document.getElementById('admin-panel');
-        const adminItemsList = document.getElementById('admin-items-list');
-        const transactionArea = document.getElementById('transaction-area');
-        const cartCountSpan = document.getElementById('cart-count');
-        const userIdDisplay = document.getElementById('user-id-display');
+        // Firestore Paths (CRITICAL for security rules)
+        const itemDefsPath = `/artifacts/${appId}/public/data/item_definitions`;
+        const stockLevelsDocPath = `/artifacts/${appId}/public/data/stock_levels/levels`;
 
-        // --- 4. CORE UI FUNCTIONS ---
-
-        const showLoading = (message) => {
-            statusMessage.textContent = message;
-            loader.classList.remove('hidden');
-            mainContent.classList.add('hidden');
-            statusCard.classList.remove('bg-red-200', 'border-red-400'); // Clear error state
-            statusCard.classList.remove('bg-green-200');
-        };
-
-        const showError = (message) => {
-            statusMessage.textContent = `CRITICAL ERROR: ${message}`;
-            loader.classList.add('hidden');
-            statusCard.classList.remove('bg-gray-50');
-            statusCard.classList.add('bg-red-200', 'border-red-400', 'text-red-700');
-            console.error(`CRITICAL APPLICATION FAILURE: ${message}`);
-        };
-
-        const showConnected = (configSource) => {
-            statusMessage.textContent = `Database Connected. Live Data Stream Active. (Config Source: ${configSource})`;
-            statusCard.classList.remove('bg-gray-50');
-            statusCard.classList.add('bg-green-200', 'text-green-800');
-            loader.classList.add('hidden');
-            mainContent.classList.remove('hidden');
-        };
-
-        // --- 5. DATA RENDERING AND LOGIC ---
-
-        function renderSiteSelect() {
-            siteSelect.innerHTML = SITE_LOCATIONS.map(site => 
-                `<option value="${site}" ${site === currentSite ? 'selected' : ''}>${site}</option>`
-            ).join('');
-            currentSiteName.textContent = currentSite;
+        // Utility to display errors
+        function displayError(message) {
+            console.error(message);
+            errorEl.textContent = `Error: ${message}`;
+            errorEl.classList.remove('hidden');
+            loadingEl.classList.add('hidden');
         }
+
+        // --- Initialization ---
+        async function initializeFirebase() {
+            if (!firebaseConfig) {
+                authStatusEl.textContent = 'Firebase Config Missing. Using Anonymous Fallback.';
+                // We cannot proceed without a config, even a fallback is not possible
+                // If config is missing, the application will not run. We must wait for the environment.
+                displayError("Firebase configuration is missing. Cannot initialize Firestore.");
+                return;
+            }
+
+            try {
+                // Initialize App and Services
+                firebaseApp = initializeApp(firebaseConfig);
+                db = getFirestore(firebaseApp);
+                auth = getAuth(firebaseApp);
+                setLogLevel('error'); // Only log errors to keep console clean
+
+                // Sign in with platform token or anonymously
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                    authStatusEl.textContent = 'Connected (Authenticated)';
+                    console.log("Signed in with custom token.");
+                } else {
+                    await signInAnonymously(auth);
+                    authStatusEl.textContent = 'Connected (Anonymous Fallback)';
+                    console.warn("Signed in anonymously as no custom token was available.");
+                }
+
+                // Wait for auth state to be ready
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        console.log(`User ID: ${userId}`);
+                        startListeners();
+                        // This is a one-time operation after auth is successful
+                        seedDefaultData();
+                        mainViewEl.classList.remove('hidden');
+                        loadingEl.classList.add('hidden');
+                    } else {
+                         // Should not happen as we force anonymous sign-in
+                        displayError("Authentication failed. Cannot access Firestore.");
+                    }
+                });
+
+
+            } catch (e) {
+                displayError(`Firebase Initialization Failed: ${e.message}`);
+            }
+        }
+
+        // --- Data Seeding ---
+        async function seedDefaultData() {
+            const itemColRef = collection(db, itemDefsPath);
+            const itemsSnapshot = await getDocs(itemColRef);
+
+            if (itemsSnapshot.empty) {
+                console.log("Seeding default data...");
+                const batch = writeBatch(db);
+
+                const defaultItems = [
+                    { id: 'item_gloves', name: 'Safety Gloves', threshold: 50 },
+                    { id: 'item_glasses', name: 'Safety Glasses', threshold: 30 },
+                    { id: 'item_hats', name: 'Hard Hats', threshold: 25 }
+                ];
+
+                defaultItems.forEach(item => {
+                    const itemRef = doc(db, `${itemDefsPath}/${item.id}`);
+                    batch.set(itemRef, { name: item.name, threshold: item.threshold, id: item.id });
+                });
+
+                // Set initial stock (100 for all items, all sites)
+                const initialStock = {};
+                sites.forEach(site => {
+                    initialStock[site] = {};
+                    defaultItems.forEach(item => {
+                        initialStock[site][item.id] = 100;
+                    });
+                });
+
+                const stockRef = doc(db, stockLevelsDocPath);
+                batch.set(stockRef, initialStock);
+
+                try {
+                    await batch.commit();
+                    console.log("Default data seeded successfully.");
+                } catch (e) {
+                    displayError(`Failed to seed data: ${e.message}`);
+                }
+            } else {
+                console.log("Existing data found. Skipping seed.");
+            }
+        }
+
+        // --- Firestore Listeners ---
+        function startListeners() {
+            // Listener for Item Definitions
+            onSnapshot(collection(db, itemDefsPath), (snapshot) => {
+                const newDefs = {};
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    newDefs[doc.id] = { ...data, id: doc.id };
+                });
+                itemDefinitions = newDefs;
+                renderStockTable();
+                if (adminMode) renderAdminPanel();
+            }, (error) => displayError(`Error loading item definitions: ${error.message}`));
+
+            // Listener for Stock Levels
+            onSnapshot(doc(db, stockLevelsDocPath), (docSnapshot) => {
+                if (docSnapshot.exists()) {
+                    siteData = docSnapshot.data();
+                } else {
+                    siteData = {};
+                    console.warn("Stock levels document does not exist.");
+                }
+                renderStockTable();
+            }, (error) => displayError(`Error loading stock levels: ${error.message}`));
+        }
+
+
+        // --- Stock Update Logic (CRITICAL: Uses Transaction) ---
+        async function updateStockInFirestore(itemId, change) {
+            if (!isAuthReady) return displayError("Authentication not ready. Cannot update stock.");
+
+            const stockRef = doc(db, stockLevelsDocPath);
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const stockDoc = await transaction.get(stockRef);
+
+                    if (!stockDoc.exists()) {
+                        throw "Stock levels document does not exist!";
+                    }
+
+                    const currentLevels = stockDoc.data();
+                    const siteLevels = currentLevels[currentSite] || {};
+                    const currentStock = siteLevels[itemId] || 0;
+                    const newStock = Math.max(0, currentStock + change);
+
+                    // Update the local site's stock level for this item
+                    siteLevels[itemId] = newStock;
+                    currentLevels[currentSite] = siteLevels;
+
+                    // Write the entire updated map back to the document
+                    transaction.set(stockRef, currentLevels);
+                });
+                console.log(`Stock for ${itemId} updated successfully (Change: ${change}).`);
+
+            } catch (e) {
+                displayError(`Transaction Failed (Stock Update): ${e.message}`);
+                // Re-enable buttons if transaction failed
+                document.querySelectorAll('button[data-action]').forEach(btn => btn.disabled = false);
+            }
+        }
+
+        // --- UI Rendering ---
+
+        // Site Dropdown Setup
+        const siteSelectEl = document.getElementById('site-select');
+        sites.forEach(site => {
+            const option = document.createElement('option');
+            option.value = site;
+            option.textContent = site;
+            siteSelectEl.appendChild(option);
+        });
+        siteSelectEl.value = currentSite;
+        siteSelectEl.addEventListener('change', (e) => {
+            currentSite = e.target.value;
+            renderStockTable();
+            updateRemovalCartUI(); // Reset cart view on site switch
+        });
 
         function renderStockTable() {
-            stockTableBody.innerHTML = '';
-            let cartActive = Object.keys(itemCart).length > 0;
-            
-            // Toggle visibility of transaction area and cart columns
-            transactionArea.classList.toggle('hidden', !cartActive);
-            document.getElementById('cart-header').classList.toggle('hidden', !cartActive);
-            document.getElementById('action-header').classList.toggle('hidden', cartActive);
-
-            const itemIds = Object.keys(itemNames).sort();
+            const tableBody = document.querySelector('#stock-table tbody');
+            tableBody.innerHTML = '';
+            const itemIds = Object.keys(itemDefinitions).sort((a, b) => itemDefinitions[a].name.localeCompare(itemDefinitions[b].name));
 
             if (itemIds.length === 0) {
-                 stockTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No items defined. Check Admin Panel or refresh after a few seconds.</td></tr>`;
-                 return;
-            }
-
-            itemIds.forEach(itemId => {
-                const item = itemNames[itemId];
-                const siteStocks = stockData[itemId] || {};
-                const level = siteStocks[currentSite] || 0;
-                const threshold = item.threshold || 0;
-                const isLow = level <= threshold;
-                const cartQty = itemCart[itemId] || 0;
-                
-                let rowClass = isLow ? 'bg-red-50 dark:bg-red-900/50' : 'hover:bg-gray-50 dark:hover:bg-gray-700';
-
-                let rowHtml = `
-                    <tr class="${rowClass}">
-                        <td class="px-6 py-4 font-medium text-gray-900 dark:text-white">${item.name}</td>
-                        <td class="px-6 py-4 text-right ${isLow ? 'text-red-500 font-bold' : ''}">${level}</td>
-                        <td class="px-6 py-4 text-right text-gray-500">${threshold}</td>
-                `;
-
-                // Removal Cart View (if cart is active)
-                if (cartActive) {
-                    rowHtml += `
-                        <td class="px-6 py-4 text-center">
-                            ${cartQty > 0 ? `<span class="font-bold text-red-600">${cartQty}</span>` : '0'}
-                            <button onclick="decrementCart('${itemId}')" class="ml-2 text-red-500 hover:text-red-700 disabled:opacity-50" ${cartQty === 0 ? 'disabled' : ''}>-</button>
-                        </td>
-                    `;
-                } 
-                // Action/Input View (if cart is inactive)
-                else {
-                    rowHtml += `
-                        <td class="px-6 py-4 text-center">
-                            <input type="number" id="qty-${itemId}" min="1" max="${level}" placeholder="Qty" class="w-20 p-1 border rounded-lg bg-gray-50 dark:bg-gray-700 text-center" value="">
-                            <button onclick="addToCart('${itemId}')" class="ml-2 btn-primary py-1 px-2 text-sm">Remove</button>
-                            <button onclick="restock('${itemId}')" class="ml-2 bg-green-500 hover:bg-green-600 text-white py-1 px-2 rounded-lg text-sm">Restock</button>
-                        </td>
-                    `;
-                }
-
-                rowHtml += `</tr>`;
-                stockTableBody.insertAdjacentHTML('beforeend', rowHtml);
-            });
-
-            if (cartActive) {
-                renderCartSummary();
-            }
-        }
-        
-        function renderCartSummary() {
-            let totalItems = 0;
-            let cartHtml = Object.keys(itemCart).map(itemId => {
-                const qty = itemCart[itemId];
-                totalItems += qty;
-                return `<p class="text-sm">• ${itemNames[itemId]?.name}: <span class="font-bold">${qty}</span> removed.</p>`;
-            }).join('');
-
-            document.getElementById('cart-summary').innerHTML = cartHtml;
-            cartCountSpan.textContent = totalItems;
-        }
-
-        // --- 6. EVENT HANDLERS (GLOBAL) ---
-        
-        window.addToCart = (itemId) => {
-            const input = document.getElementById(`qty-${itemId}`);
-            const qty = parseInt(input.value, 10);
-            const currentLevel = (stockData[itemId] || {})[currentSite] || 0;
-
-            if (qty > 0 && qty <= currentLevel) {
-                itemCart[itemId] = (itemCart[itemId] || 0) + qty;
-                input.value = ''; // Clear input
-                renderStockTable();
-            } else if (qty > currentLevel) {
-                 console.warn(`Cannot remove ${qty}: only ${currentLevel} in stock.`);
-            }
-        };
-
-        window.decrementCart = (itemId) => {
-            if (itemCart[itemId] && itemCart[itemId] > 0) {
-                itemCart[itemId] -= 1;
-                if (itemCart[itemId] === 0) {
-                    delete itemCart[itemId];
-                }
-                renderStockTable();
-            }
-        };
-
-        window.clearCart = () => {
-            itemCart = {};
-            renderStockTable();
-        };
-
-        window.restock = async (itemId) => {
-            const input = document.getElementById(`qty-${itemId}`);
-            const qty = parseInt(input.value, 10);
-
-            if (qty <= 0 || isNaN(qty)) {
-                console.warn("Invalid restock quantity.");
+                tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-500 py-4">No items defined yet. Please check Admin Panel.</td></tr>';
                 return;
             }
 
-            const currentLevel = (stockData[itemId] || {})[currentSite] || 0;
-            const newLevel = currentLevel + qty;
+            itemIds.forEach(itemId => {
+                const item = itemDefinitions[itemId];
+                const siteLevels = siteData[currentSite] || {};
+                const currentStock = siteLevels[itemId] || 0;
+                const isLow = currentStock <= item.threshold;
 
-            try {
-                // Update stock level for the current site
-                const stockDocRef = doc(getStockLevelsRef(), itemId);
-                await updateDoc(stockDocRef, { [currentSite]: newLevel });
-                
-                // Record the transaction
-                await setDoc(doc(getTransactionsRef()), {
-                    itemId: itemId,
-                    site: currentSite,
-                    quantity: qty,
-                    type: 'restock',
-                    timestamp: Timestamp.now(),
-                    userId: userId,
-                });
+                const row = document.createElement('tr');
+                row.className = isLow ? 'low-stock' : '';
 
-                input.value = ''; // Clear input
-                console.log(`Restocked ${qty} of ${itemNames[itemId].name} at ${currentSite}`);
-            } catch(e) {
-                console.error("Restock failed:", e);
-            }
-        };
+                row.innerHTML = `
+                    <td>${item.name}</td>
+                    <td>${currentStock}</td>
+                    <td>${item.threshold}</td>
+                    <td>
+                        <div class="flex space-x-2 items-center">
+                            <input type="number" data-item-id="${itemId}" class="input-text w-20 text-center quantity-input" placeholder="Qty" value="1">
+                            <button class="btn-primary restock-btn" data-item-id="${itemId}">Restock</button>
+                            <button class="btn-danger remove-btn" data-item-id="${itemId}">Remove</button>
+                        </div>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
 
-        document.getElementById('confirm-removal-btn').addEventListener('click', async () => {
-            const batch = writeBatch(db);
-            const transactionDoc = doc(getTransactionsRef());
-            const transactionEntries = [];
+            // Re-attach event listeners after rendering
+            document.querySelectorAll('.restock-btn').forEach(btn => btn.addEventListener('click', handleRestock));
+            document.querySelectorAll('.remove-btn').forEach(btn => btn.addEventListener('click', handleStageRemoval));
+        }
 
-            try {
-                for (const itemId in itemCart) {
-                    const removeQty = itemCart[itemId];
-                    const currentLevel = (stockData[itemId] || {})[currentSite] || 0;
-                    const newLevel = currentLevel - removeQty;
+        // --- Event Handlers ---
 
-                    if (newLevel < 0) {
-                        console.error(`Attempted over-removal for ${itemNames[itemId].name}. Aborting batch.`);
-                        throw new Error(`Over-removal attempt for ${itemNames[itemId].name}`);
-                    }
+        function getQuantity(itemId) {
+            const input = document.querySelector(`.quantity-input[data-item-id="${itemId}"]`);
+            const quantity = parseInt(input?.value, 10);
+            return (quantity > 0) ? quantity : 1;
+        }
 
-                    // 1. Update stock level
-                    const stockDocRef = doc(getStockLevelsRef(), itemId);
-                    batch.update(stockDocRef, { [currentSite]: newLevel });
+        function handleRestock(e) {
+            const itemId = e.target.getAttribute('data-item-id');
+            const quantity = getQuantity(itemId);
+            updateStockInFirestore(itemId, quantity);
+        }
 
-                    // 2. Record transaction entry
-                    transactionEntries.push({
-                        itemId: itemId,
-                        quantity: removeQty,
-                        type: 'removal',
-                    });
-                }
+        function handleStageRemoval(e) {
+            const itemId = e.target.getAttribute('data-item-id');
+            const quantity = getQuantity(itemId);
 
-                // 3. Commit the batch updates
-                await batch.commit();
-
-                // 4. Record the overall transaction
-                await setDoc(transactionDoc, {
-                    site: currentSite,
-                    entries: transactionEntries,
-                    timestamp: Timestamp.now(),
-                    userId: userId,
-                });
-
-                window.clearCart();
-                console.log('Removal confirmed and transactions recorded.');
-
-            } catch (e) {
-                console.error("Transaction failed:", e);
-                // In a real app, you might revert local state or inform the user
-            }
-        });
-
-
-        // Handle Site Change
-        siteSelect.addEventListener('change', (e) => {
-            currentSite = e.target.value;
-            currentSiteName.textContent = currentSite;
-            renderStockTable();
-        });
-
-        // Handle Admin Toggle
-        adminToggleBtn.addEventListener('click', () => {
-            if (isAdmin) {
-                isAdmin = false;
-                adminStatusSpan.textContent = 'Off';
-                adminPanel.classList.add('hidden');
-                adminLoginArea.classList.add('hidden');
-                adminPasswordInput.value = '';
-                console.log("Admin mode disabled.");
+            if (pendingRemoval[itemId]) {
+                pendingRemoval[itemId] += quantity;
             } else {
-                adminLoginArea.classList.remove('hidden');
+                pendingRemoval[itemId] = quantity;
             }
-        });
 
-        // Handle Admin Login
-        adminPasswordInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                if (adminPasswordInput.value === ADMIN_PASSWORD) {
-                    isAdmin = true;
-                    adminStatusSpan.textContent = 'On';
-                    adminPanel.classList.remove('hidden');
-                    adminLoginArea.classList.add('hidden');
-                    renderAdminItems();
-                    console.log("Admin mode enabled.");
-                } else {
-                    console.error("Incorrect Admin Password");
-                    adminPasswordInput.value = '';
-                }
-            }
-        });
-
-        // --- 7. DATA LISTENERS (REAL-TIME) ---
-
-        // Listener for Item Metadata (The names and thresholds)
-        function setupItemsListener() {
-            const itemsQuery = query(getItemsRef());
-            onSnapshot(itemsQuery, (snapshot) => {
-                itemNames = {};
-                snapshot.forEach(doc => {
-                    itemNames[doc.id] = { ...doc.data(), docId: doc.id };
-                });
-                console.log("Item metadata updated:", itemNames);
-                renderStockTable();
-                if (isAdmin) renderAdminItems();
-            }, (error) => {
-                console.error("Error setting up items listener:", error);
-            });
+            // Clear input after staging
+            document.querySelector(`.quantity-input[data-item-id="${itemId}"]`).value = 1;
+            updateRemovalCartUI();
         }
 
-        // Listener for Stock Levels
-        function setupStockLevelsListener() {
-            const stockQuery = query(getStockLevelsRef());
-            onSnapshot(stockQuery, (snapshot) => {
-                stockData = {};
-                snapshot.forEach(doc => {
-                    stockData[doc.id] = doc.data();
-                });
-                console.log("Stock levels updated:", stockData);
-                renderStockTable();
-            }, (error) => {
-                console.error("Error setting up stock levels listener:", error);
-            });
-        }
-        
-        // --- 8. INITIAL DATA SEEDING (Run once on connect if data is missing) ---
+        function updateRemovalCartUI() {
+            const listEl = document.getElementById('pending-list');
+            const confirmBtn = document.getElementById('confirm-removal-btn');
+            const itemIds = Object.keys(pendingRemoval);
+            let totalItems = 0;
 
-        async function seedInitialData() {
-            const batch = writeBatch(db);
-            let needsCommit = false;
+            listEl.innerHTML = '';
+            document.getElementById('empty-cart-message')?.remove();
 
-            // Seed Item Definitions
-            const itemsSnap = await new Promise(resolve => {
-                // Attach a one-time listener to get current state (or null if error/unauthorized)
-                const unsubscribe = onSnapshot(getItemsRef(), (snap) => {
-                    unsubscribe(); // Stop listening after first data snapshot
-                    resolve(snap);
-                }, () => resolve({ empty: true })); // Handle error as empty for graceful seed attempt
-            });
-            
-            if (itemsSnap.empty) {
-                console.log("Seeding default items...");
-                DEFAULT_ITEMS.forEach(item => {
-                    const docRef = doc(getItemsRef(), item.id);
-                    batch.set(docRef, { name: item.name, threshold: item.threshold });
-                    needsCommit = true;
-                });
+            if (itemIds.length === 0) {
+                listEl.innerHTML = '<p class="text-gray-500" id="empty-cart-message">No items staged for removal.</p>';
+                confirmBtn.textContent = 'Confirm Removal of 0 Items';
+                confirmBtn.disabled = true;
+                document.getElementById('removal-cart').classList.add('hidden');
+                return;
             }
 
-            // Seed Stock Levels (Initial stock of 100 for all sites/items)
-            if (needsCommit) {
-                await batch.commit();
-                console.log("Default items seeded.");
-            }
-            
-            // Re-run batch for stock levels
-            const stockBatch = writeBatch(db);
-            let stockNeedsCommit = false;
-            
-            const stockSnap = await new Promise(resolve => {
-                const unsubscribe = onSnapshot(getStockLevelsRef(), (snap) => {
-                    unsubscribe();
-                    resolve(snap);
-                }, () => resolve({ empty: true }));
-            });
-
-            if (stockSnap.empty) {
-                 console.log("Seeding initial stock levels...");
-                 // Use items from the snap if available, otherwise fall back to our hardcoded defaults
-                 const currentItems = itemsSnap.empty ? DEFAULT_ITEMS : itemsSnap.docs.map(d => ({id: d.id}));
-
-                 currentItems.forEach(item => {
-                    const stockUpdate = {};
-                    SITE_LOCATIONS.forEach(site => {
-                        stockUpdate[site] = 100; // Default level
-                    });
-                    const docRef = doc(getStockLevelsRef(), item.id);
-                    stockBatch.set(docRef, stockUpdate);
-                    stockNeedsCommit = true;
-                });
-            }
-            
-            if (stockNeedsCommit) {
-                 await stockBatch.commit();
-                 console.log("Initial stock levels seeded.");
-            }
-        }
-
-
-        // --- 9. ADMIN PANEL FUNCTIONS ---
-
-        function renderAdminItems() {
-            adminItemsList.innerHTML = '';
-            const itemIds = Object.keys(itemNames).sort();
+            document.getElementById('removal-cart').classList.remove('hidden');
 
             itemIds.forEach(itemId => {
-                const item = itemNames[itemId];
-                const itemDiv = document.createElement('div');
-                itemDiv.className = 'flex items-center space-x-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg';
-                itemDiv.innerHTML = `
-                    <input type="text" id="name-${itemId}" value="${item.name}" placeholder="Item Name" class="w-1/3 p-2 border rounded-lg bg-white dark:bg-gray-600">
-                    <input type="number" id="threshold-${itemId}" value="${item.threshold}" min="1" placeholder="Threshold" class="w-24 p-2 border rounded-lg bg-white dark:bg-gray-600">
-                    <button onclick="saveItem('${itemId}')" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-lg text-sm">Save</button>
-                    <button onclick="deleteItem('${itemId}')" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-lg text-sm">Delete</button>
-                `;
-                adminItemsList.appendChild(itemDiv);
+                const quantity = pendingRemoval[itemId];
+                if (quantity > 0) {
+                    const item = itemDefinitions[itemId];
+                    totalItems += quantity;
+                    const div = document.createElement('div');
+                    div.className = 'pending-removal-item p-3 flex justify-between items-center rounded';
+                    div.innerHTML = `
+                        <span>${item ? item.name : itemId} (${currentSite}): <strong>${quantity}</strong> removed</span>
+                        <button class="text-sm text-red-600 hover:text-red-800 clear-item-btn" data-item-id="${itemId}">Clear</button>
+                    `;
+                    listEl.appendChild(div);
+                }
             });
+
+            confirmBtn.textContent = `Confirm Removal of ${totalItems} Items`;
+            confirmBtn.disabled = totalItems === 0;
+
+            document.querySelectorAll('.clear-item-btn').forEach(btn => btn.addEventListener('click', (e) => {
+                const itemId = e.target.getAttribute('data-item-id');
+                delete pendingRemoval[itemId];
+                updateRemovalCartUI();
+            }));
         }
 
-        window.saveItem = async (itemId) => {
-            const name = document.getElementById(`name-${itemId}`).value;
-            const threshold = parseInt(document.getElementById(`threshold-${itemId}`).value, 10);
-            
-            if (!name || isNaN(threshold) || threshold < 1) {
-                console.error("Invalid item details.");
-                return;
-            }
+        // --- Confirm Removal Handler (Batch Write) ---
+        document.getElementById('confirm-removal-btn').addEventListener('click', async () => {
+            if (!isAuthReady || isBatching) return;
+            isBatching = true;
+            document.getElementById('confirm-removal-btn').disabled = true;
+
+            const itemsToCommit = { ...pendingRemoval };
+            Object.keys(pendingRemoval).forEach(key => delete pendingRemoval[key]);
+            updateRemovalCartUI(); // Clear cart UI immediately
+
+            const stockRef = doc(db, stockLevelsDocPath);
 
             try {
-                const docRef = doc(getItemsRef(), itemId);
-                await updateDoc(docRef, { name, threshold });
-                console.log(`Item ${name} saved.`);
+                await runTransaction(db, async (transaction) => {
+                    const stockDoc = await transaction.get(stockRef);
+                    if (!stockDoc.exists()) throw "Stock levels document does not exist!";
+
+                    const currentLevels = stockDoc.data();
+                    let siteLevels = currentLevels[currentSite] || {};
+
+                    for (const itemId in itemsToCommit) {
+                        const quantityToRemove = itemsToCommit[itemId];
+                        const currentStock = siteLevels[itemId] || 0;
+                        const newStock = Math.max(0, currentStock - quantityToRemove);
+                        siteLevels[itemId] = newStock;
+                    }
+
+                    currentLevels[currentSite] = siteLevels;
+                    transaction.set(stockRef, currentLevels);
+                });
+                console.log(`Batch removal committed successfully.`);
             } catch (e) {
-                console.error("Failed to save item:", e);
+                displayError(`Transaction Failed (Batch Removal): ${e.message}`);
+                // In a real app, you might want to restore the pending items here.
+            } finally {
+                isBatching = false;
+                document.getElementById('confirm-removal-btn').disabled = false;
             }
-        };
-
-        window.deleteItem = async (itemId) => {
-            // Note: Using console.warn instead of confirm() for non-blocking UI
-            console.warn(`Attempting to delete ${itemNames[itemId].name}. (If this were a real application, a modal confirmation would appear here)`);
-
-            try {
-                // Delete Item Definition
-                await deleteDoc(doc(getItemsRef(), itemId));
-                
-                // Delete Stock Level Document
-                await deleteDoc(doc(getStockLevelsRef(), itemId));
-
-                console.log(`Item ${itemId} deleted.`);
-            } catch (e) {
-                console.error("Failed to delete item:", e);
-            }
-        };
-
-        document.getElementById('add-new-item-btn').addEventListener('click', () => {
-            const newItemId = `item_${Date.now()}`;
-            const newDiv = document.createElement('div');
-            newDiv.className = 'flex items-center space-x-4 p-3 bg-yellow-50 dark:bg-yellow-900/50 rounded-lg';
-            newDiv.innerHTML = `
-                <input type="text" id="name-${newItemId}" value="New Item" placeholder="Item Name" class="w-1/3 p-2 border rounded-lg bg-white dark:bg-gray-600">
-                <input type="number" id="threshold-${newItemId}" value="10" min="1" placeholder="Threshold" class="w-24 p-2 border rounded-lg bg-white dark:bg-gray-600">
-                <button onclick="commitNewItem('${newItemId}')" class="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg text-sm">Create</button>
-                <button onclick="this.parentNode.remove()" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-lg text-sm">Cancel</button>
-            `;
-            adminItemsList.prepend(newDiv);
         });
 
-        window.commitNewItem = async (itemId) => {
-            const name = document.getElementById(`name-${itemId}`).value;
-            const threshold = parseInt(document.getElementById(`threshold-${itemId}`).value, 10);
+        // --- Admin Mode Logic ---
 
-            if (!name || isNaN(threshold) || threshold < 1) {
-                console.error("Invalid item details for creation.");
-                return;
+        document.getElementById('admin-mode-toggle').addEventListener('click', () => {
+            const password = prompt("Enter Admin Password:");
+            if (password === 'admin') {
+                adminMode = true;
+                document.getElementById('admin-mode-toggle').textContent = 'Admin Mode: On (Click to exit)';
+                document.getElementById('admin-panel').classList.remove('hidden');
+                renderAdminPanel();
+            } else if (adminMode) {
+                adminMode = false;
+                document.getElementById('admin-mode-toggle').textContent = 'Admin Mode: Off';
+                document.getElementById('admin-panel').classList.add('hidden');
+            } else {
+                alert("Incorrect password.");
+            }
+        });
+
+        function renderAdminPanel() {
+            const listEl = document.getElementById('admin-item-list');
+            listEl.innerHTML = '';
+            const itemIds = Object.keys(itemDefinitions).sort((a, b) => itemDefinitions[a].name.localeCompare(itemDefinitions[b].name));
+
+            itemIds.forEach(itemId => {
+                const item = itemDefinitions[itemId];
+                const div = document.createElement('div');
+                div.className = 'flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 p-3 card';
+                div.innerHTML = `
+                    <input type="text" data-field="name" value="${item.name}" placeholder="Item Name" class="input-text flex-grow">
+                    <input type="number" data-field="threshold" value="${item.threshold}" placeholder="Threshold" class="input-text w-full sm:w-32">
+                    <button class="btn-primary save-def-btn" data-item-id="${itemId}">Save</button>
+                    <button class="btn-danger delete-def-btn" data-item-id="${itemId}">Delete</button>
+                `;
+                listEl.appendChild(div);
+            });
+
+            document.querySelectorAll('.save-def-btn').forEach(btn => btn.addEventListener('click', handleSaveItemDefinition));
+            document.querySelectorAll('.delete-def-btn').forEach(btn => btn.addEventListener('click', handleDeleteItemDefinition));
+        }
+
+        async function handleSaveItemDefinition(e) {
+            const itemId = e.target.getAttribute('data-item-id');
+            const parent = e.target.closest('div');
+            const newName = parent.querySelector('[data-field="name"]').value;
+            const newThreshold = parseInt(parent.querySelector('[data-field="threshold"]').value, 10);
+
+            if (!newName || isNaN(newThreshold) || newThreshold < 0) {
+                return alert("Please enter a valid name and a non-negative threshold.");
             }
 
-            const batch = writeBatch(db);
-            
-            // Create Item Definition
-            const itemRef = doc(getItemsRef(), itemId);
-            batch.set(itemRef, { name, threshold });
-
-            // Create Initial Stock Level (100 for all sites)
-            const stockUpdate = {};
-            SITE_LOCATIONS.forEach(site => { stockUpdate[site] = 100; });
-            const stockRef = doc(getStockLevelsRef(), itemId);
-            batch.set(stockRef, stockUpdate);
-
+            const itemRef = doc(db, `${itemDefsPath}/${itemId}`);
             try {
-                await batch.commit();
-                console.log(`New item ${name} created successfully.`);
+                // Update the item definition document
+                await setDoc(itemRef, { name: newName, threshold: newThreshold, id: itemId }, { merge: true });
+                console.log(`Item definition for ${itemId} updated.`);
             } catch (e) {
-                console.error("Failed to create new item:", e);
-            }
-        };
-
-        // --- 10. CORE FIREBASE SETUP (FALLBACK LOGIC) ---
-        async function setupFirebase() {
-            showLoading("Initializing Firebase...");
-            let firebaseConfig;
-            let configSource = 'Platform Variable';
-            let isFallback = false;
-
-            try {
-                // 1. Get mandatory global variables provided by the platform (with robust checks)
-                appId = typeof __app_id === 'string' && __app_id.length > 0 ? __app_id : 'default-app-id';
-
-                let configString = typeof __firebase_config === 'string' && __firebase_config.length > 0 ? __firebase_config : null;
-                const initialAuthToken = typeof __initial_auth_token === 'string' && __initial_auth_token.length > 0 ? __initial_auth_token : null;
-                
-                
-                // --- ROBUST CONFIGURATION HANDLING ---
-                if (configString) {
-                    try {
-                        firebaseConfig = JSON.parse(configString);
-                        if (!firebaseConfig || !firebaseConfig.projectId) {
-                            // If it parses but the Project ID is missing, fall back.
-                            throw new Error("Missing Project ID after parse.");
-                        }
-                    } catch (e) {
-                        isFallback = true;
-                        console.warn(`[WARN] Platform config string failed validation/parse: ${e.message}. Falling back to hardcoded config.`);
-                        firebaseConfig = LIVE_FIREBASE_CONFIG_FALLBACK;
-                        configSource = 'Hardcoded Fallback (Parse Failed)';
-                    }
-                } else {
-                    isFallback = true;
-                    console.warn("[WARN] Platform variable __firebase_config is missing or empty. Falling back to hardcoded config.");
-                    firebaseConfig = LIVE_FIREBASE_CONFIG_FALLBACK;
-                    configSource = 'Hardcoded Fallback (Variable Missing)';
-                }
-                
-                // 2. Initialize App and Firestore Services
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                
-                // 3. Authentication
-                showLoading("Authenticating User...");
-                
-                if (isFallback) {
-                    // Skip Auth setup entirely and generate a local ID for Firestore path compliance.
-                    userId = `unauthenticated_${crypto.randomUUID()}`;
-                    isAuthReady = true; 
-                    console.warn("[WARN] Running in UN-AUTHENTICATED mode. User ID is locally generated.");
-
-                } else {
-                    // Use standard authentication flow if the platform configuration was successfully loaded
-                    auth = getAuth(app);
-                    let user;
-                    if (initialAuthToken) {
-                        const credentials = await signInWithCustomToken(auth, initialAuthToken);
-                        user = credentials.user;
-                    } else {
-                        const credentials = await signInAnonymously(auth);
-                        user = credentials.user;
-                    }
-                    if (!user) throw new Error('Authentication Failed: Could not get user credential.');
-                    userId = user.uid; 
-                    isAuthReady = true;
-                }
-                
-                // 4. Update state and start data stream
-                userIdDisplay.querySelector('span').textContent = userId;
-                userIdDisplay.classList.remove('hidden');
-
-                showLoading("Seeding default data...");
-                await seedInitialData();
-
-                showLoading("Setting up real-time listeners...");
-                setupItemsListener();
-                setupStockLevelsListener();
-                
-                showConnected(configSource);
-
-                // Initial UI Render
-                renderSiteSelect();
-
-
-            } catch (error) {
-                // If any part of the setup fails, show a prominent error message
-                showError(`Setup Failed: ${error.message}.`);
+                displayError(`Failed to save item definition: ${e.message}`);
             }
         }
 
-        // Start the application
-        setupFirebase();
+        // --- Add New Item ---
+        document.getElementById('add-new-item-btn').addEventListener('click', async () => {
+            const nameEl = document.getElementById('new-item-name');
+            const thresholdEl = document.getElementById('new-item-threshold');
+            const name = nameEl.value.trim();
+            const threshold = parseInt(thresholdEl.value, 10);
+
+            if (!name || isNaN(threshold) || threshold < 0) {
+                return alert("Please enter a valid item name and a non-negative threshold.");
+            }
+
+            const itemId = 'item_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            const itemRef = doc(db, `${itemDefsPath}/${itemId}`);
+            const stockRef = doc(db, stockLevelsDocPath);
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    // 1. Check/Add Item Definition
+                    transaction.set(itemRef, { name: name, threshold: threshold, id: itemId });
+
+                    // 2. Update Stock Levels for all sites
+                    const stockDoc = await transaction.get(stockRef);
+                    if (stockDoc.exists()) {
+                        const currentLevels = stockDoc.data();
+                        sites.forEach(site => {
+                            if (!currentLevels[site]) currentLevels[site] = {};
+                            // Set initial stock to 100 for the new item at all sites
+                            currentLevels[site][itemId] = 100;
+                        });
+                        transaction.set(stockRef, currentLevels);
+                    }
+                });
+
+                nameEl.value = '';
+                thresholdEl.value = '50';
+                console.log(`New item ${name} added successfully.`);
+            } catch (e) {
+                displayError(`Failed to add new item in transaction: ${e.message}`);
+            }
+        });
+
+        async function handleDeleteItemDefinition(e) {
+            const itemId = e.target.getAttribute('data-item-id');
+            if (!confirm(`Are you sure you want to delete ${itemDefinitions[itemId]?.name}? This will remove it from all sites.`)) {
+                return;
+            }
+
+            const itemDefRef = doc(db, `${itemDefsPath}/${itemId}`);
+            const stockRef = doc(db, stockLevelsDocPath);
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    // 1. Delete Item Definition
+                    transaction.delete(itemDefRef);
+
+                    // 2. Remove Item from Stock Levels
+                    const stockDoc = await transaction.get(stockRef);
+                    if (stockDoc.exists()) {
+                        const currentLevels = stockDoc.data();
+                        sites.forEach(site => {
+                            if (currentLevels[site] && currentLevels[site][itemId] !== undefined) {
+                                delete currentLevels[site][itemId];
+                            }
+                        });
+                        transaction.set(stockRef, currentLevels);
+                    }
+                });
+                console.log(`Item ${itemId} deleted successfully.`);
+            } catch (e) {
+                displayError(`Failed to delete item in transaction: ${e.message}`);
+            }
+        }
+
+        // Initial setup call
+        loadingEl.classList.remove('hidden');
+        initializeFirebase();
+
     </script>
 </body>
 </html>
