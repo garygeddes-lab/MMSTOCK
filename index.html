@@ -57,7 +57,7 @@
         <!-- Main Content Area -->
         <div id="main-content" class="w-full max-w-6xl flex flex-col md:flex-row gap-6">
 
-            <!-- Staff View (Always visible) -->
+            <!-- Staff View (Always visible until admin login) -->
             <div id="staff-view" class="w-full md:w-2/3 bg-card-light shadow-xl rounded-xl p-6 transition-all duration-300">
                 <h2 class="text-2xl font-semibold mb-4 text-secondary-teal border-b pb-2">Staff Stock Removal</h2>
                 
@@ -271,14 +271,15 @@
         </div>
     </div>
 
-    <!-- Generic Message/Alert Modal -->
+    <!-- Generic Message/Alert/Confirm Modal -->
     <div id="message-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm m-4 transform transition-all duration-300">
             <h3 id="message-title" class="text-xl font-bold mb-4 text-primary-purple"></h3>
             <p id="message-body" class="mb-6 text-gray-700"></p>
-            <button onclick="closeMessageModal()" class="w-full py-2 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">
-                Close
-            </button>
+            <div id="modal-actions" class="flex justify-end space-x-2">
+                 <!-- Default primary button. Content/action changes for confirmation use -->
+                 <button id="modal-primary-btn" onclick="closeMessageModal()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150 w-full">Close</button>
+            </div>
         </div>
     </div>
 
@@ -333,7 +334,13 @@
         /** Shows a generic modal message */
         window.showMessageModal = (title, body) => {
             document.getElementById('message-title').textContent = title;
-            document.getElementById('message-body').textContent = body;
+            document.getElementById('message-body').innerHTML = body;
+            
+            const modalActions = document.getElementById('modal-actions');
+            modalActions.innerHTML = `
+                <button onclick="closeMessageModal()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150 w-full">Close</button>
+            `;
+            
             document.getElementById('message-modal').classList.remove('hidden');
         };
 
@@ -600,7 +607,7 @@
             }
 
             closeCheckoutModal();
-            showMessageModal("Processing...", "Recording transaction and updating stock levels...");
+            showMessageModal("Processing...", "Recording transaction and updating stock levels. Please wait (transaction may retry).");
 
             const locName = locations.find(l => l.id === locationId)?.name;
             let success = true;
@@ -617,8 +624,14 @@
                         const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
                         
                         const stockSnap = await t.get(stockRef);
-                        const currentQuantity = stockSnap.exists() ? stockSnap.data().quantity : 0;
                         
+                        // STRICTURE CHECK: Ensure stock document exists before trying to modify it
+                        if (!stockSnap.exists()) {
+                             // If we try to remove stock from a document that doesn't exist, current stock is 0.
+                            throw new Error(`Item ${itemName} not found in stock for this location (current quantity is 0).`);
+                        }
+                        
+                        const currentQuantity = stockSnap.data().quantity;
                         const newQuantity = currentQuantity - quantityRemoved;
                         
                         if (newQuantity < 0) {
@@ -652,8 +665,15 @@
             } catch (error) {
                 success = false;
                 console.error("Transaction failed: ", error);
-                // Check if it's the specific stock error we threw
-                const errorMessage = error.message.includes("Insufficient stock") ? error.message : "An unexpected database error occurred during stock removal. Please try again.";
+                
+                let errorMessage;
+                if (error.message.includes("Insufficient stock") || error.message.includes("not found")) {
+                    errorMessage = error.message;
+                } else {
+                    // This error indicates the optimistic lock failure occurred after all retries
+                    errorMessage = "The stock update failed due to high contention or a version mismatch. Please try the transaction again.";
+                }
+                
                 showMessageModal("Transaction Failed", errorMessage);
             }
 
@@ -691,6 +711,7 @@
                 document.getElementById('admin-panel').classList.remove('hidden');
                 document.getElementById('main-content').classList.add('md:flex-wrap'); // Adjust layout for admin view
                 document.getElementById('summary-card').classList.add('hidden'); // Hide login card
+                document.getElementById('staff-view').classList.add('hidden'); // Hide staff view on admin login
                 toggleAdminLogin();
                 showAdminTab(activeAdminTab); // Ensure content is rendered
                 // Re-render admin content on successful login
@@ -707,6 +728,7 @@
             document.getElementById('admin-panel').classList.add('hidden');
             document.getElementById('main-content').classList.remove('md:flex-wrap');
             document.getElementById('summary-card').classList.remove('hidden');
+            document.getElementById('staff-view').classList.remove('hidden'); // Show staff view on admin logout
             showMessageModal("Logout", "You have been logged out of the Admin Panel.");
         };
 
@@ -750,6 +772,7 @@
                             <th class="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Item</th>
                             <th class="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty</th>
                             <th class="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Staff</th>
+                            <th class="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -770,11 +793,94 @@
                         <td class="py-3 px-4 text-sm text-gray-700">${t.item || 'N/A'}</td>
                         <td class="py-3 px-4 whitespace-nowrap text-sm font-bold ${quantityClass}">${t.quantity}</td>
                         <td class="py-3 px-4 text-sm text-gray-700">${t.staffName || 'Admin'}</td>
+                        <td class="py-3 px-4 whitespace-nowrap text-sm">
+                            <button onclick="deleteTransaction('${t.id}', ${t.quantity}, '${t.location}', '${t.item}')" 
+                                class="py-1 px-2 bg-red-500 text-white rounded-lg text-xs hover:bg-red-600 transition duration-150">
+                                Delete
+                            </button>
+                        </td>
                     </tr>
                 `;
             }).join('');
 
             tableContainer.innerHTML = header + rows + '</tbody></table>';
+        };
+
+        /** Executes the atomic deletion of a transaction and reverses the stock change */
+        window.deleteTransaction = (transactionId, quantityChange, locationName, itemName) => {
+            // The stock adjustment is the reverse of the recorded quantity
+            const stockAdjustment = -quantityChange; 
+            const action = stockAdjustment > 0 ? 'increase' : 'decrease';
+            const absAdjustment = Math.abs(stockAdjustment);
+
+            const warningBody = `
+                <p class="text-gray-700 mb-4">You are about to delete a transaction recorded for **${itemName}** at **${locationName}**.</p>
+                <p class="text-red-600 font-bold mb-4">WARNING: This will automatically ${action} the stock level by ${absAdjustment} to reverse the change.</p>
+                <p class="text-sm text-gray-500">Do you wish to proceed?</p>
+            `;
+
+            // Function to perform the deletion
+            const performDeletion = async () => {
+                closeMessageModal();
+                showMessageModal("Processing...", "Deleting transaction and adjusting stock. Please wait.");
+
+                const transactionRef = doc(db, `/artifacts/${appId}/users/${userId}/transactions`, transactionId);
+                
+                const item = items.find(i => i.name === itemName);
+                const location = locations.find(l => l.name === locationName);
+
+                if (!item || !location) {
+                    showMessageModal("Error", "Could not find associated item or location data. Cannot adjust stock.");
+                    return;
+                }
+                
+                const stockDocId = `${location.id}_${item.id}`;
+                const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
+
+                try {
+                    await runTransaction(db, async (t) => {
+                        // 1. Read Stock Document
+                        const stockSnap = await t.get(stockRef);
+                        
+                        if (!stockSnap.exists()) {
+                            // If stock document is missing, proceed with transaction deletion, but log warning.
+                            console.warn(`Stock level document for ${itemName} at ${locationName} not found. Deleting log entry only.`);
+                            // We don't throw an error here to ensure the log entry is deleted.
+                        } else {
+                            const currentQuantity = stockSnap.data().quantity;
+                            const newQuantity = currentQuantity + stockAdjustment;
+
+                            if (newQuantity < 0) {
+                                // Rollback the transaction if it results in negative stock
+                                throw new Error(`Reversing this transaction would result in negative stock (${currentQuantity} + ${stockAdjustment} = ${newQuantity}). Aborting deletion.`);
+                            }
+                            
+                            // 2. Update Stock Document
+                            t.update(stockRef, { quantity: newQuantity });
+                        }
+                        
+                        // 3. Delete Transaction Document (Always attempt to delete log entry)
+                        t.delete(transactionRef);
+                    });
+
+                    showMessageModal("Success", `Transaction deleted and stock for ${itemName} at ${locationName} adjusted by ${stockAdjustment}.`);
+                } catch (error) {
+                    console.error("Atomic Deletion/Adjustment failed: ", error);
+                    showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
+                }
+            };
+
+            // Set up the custom confirmation modal
+            document.getElementById('message-title').textContent = "Confirm Transaction Deletion";
+            document.getElementById('message-body').innerHTML = warningBody;
+
+            const modalActions = document.getElementById('modal-actions');
+            modalActions.innerHTML = `
+                <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
+                <button onclick="performDeletion()" class="py-2 px-4 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-150">Confirm Delete</button>
+            `;
+
+            document.getElementById('message-modal').classList.remove('hidden');
         };
 
         /** Applies filters to the transaction log */
@@ -1268,15 +1374,28 @@
 
         /** Removes a stock item (Private Data) */
         window.removeItem = async (itemId, itemName) => {
-            if (!confirm(`Are you sure you want to remove the stock item: ${itemName}? This will not remove existing stock levels.`)) return;
+            // Using a simple modal as a prompt for confirmation since window.confirm is forbidden
+            const confirmRemoval = async () => {
+                try {
+                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/items`, itemId));
+                    closeMessageModal();
+                    showMessageModal("Success", `Stock Item '${itemName}' removed.`);
+                } catch (error) {
+                    console.error("Error removing item:", error);
+                    closeMessageModal();
+                    showMessageModal("Error", "Failed to remove item.");
+                }
+            };
 
-            try {
-                await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/items`, itemId));
-                showMessageModal("Success", `Stock Item '${itemName}' removed.`);
-            } catch (error) {
-                console.error("Error removing item:", error);
-                showMessageModal("Error", "Failed to remove item.");
-            }
+            document.getElementById('message-title').textContent = "Confirm Item Deletion";
+            document.getElementById('message-body').innerHTML = `<p class="text-gray-700">Are you sure you want to remove the stock item: <strong>${itemName}</strong>? This will not remove existing stock levels.</p>`;
+            
+            const modalActions = document.getElementById('modal-actions');
+            modalActions.innerHTML = `
+                <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
+                <button onclick="confirmRemoval()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Item</button>
+            `;
+            document.getElementById('message-modal').classList.remove('hidden');
         };
 
         /** Adds a new location (Private Data) */
@@ -1302,20 +1421,33 @@
 
         /** Removes a location (Private Data) */
         window.removeLocation = async (locationId, locationName) => {
-            if (!confirm(`WARNING: Are you sure you want to remove the location: ${locationName}? This will not delete existing stock or transactions associated with this location.`)) return;
+            // Using a simple modal as a prompt for confirmation since window.confirm is forbidden
+            const confirmRemoval = async () => {
+                try {
+                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/locations`, locationId));
+                    closeMessageModal();
+                    showMessageModal("Success", `Location '${locationName}' removed.`);
+                } catch (error) {
+                    console.error("Error removing location:", error);
+                    closeMessageModal();
+                    showMessageModal("Error", "Failed to remove location.");
+                }
+            };
+            
+            document.getElementById('message-title').textContent = "Confirm Location Deletion";
+            document.getElementById('message-body').innerHTML = `<p class="text-red-600 font-bold mb-2">WARNING: Removing ${locationName}?</p><p class="text-gray-700">This will not delete existing stock or transactions associated with this location.</p>`;
 
-            try {
-                await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/locations`, locationId));
-                showMessageModal("Success", `Location '${locationName}' removed.`);
-            } catch (error) {
-                console.error("Error removing location:", error);
-                showMessageModal("Error", "Failed to remove location.");
-            }
+            const modalActions = document.getElementById('modal-actions');
+            modalActions.innerHTML = `
+                <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
+                <button onclick="confirmRemoval()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Location</button>
+            `;
+            document.getElementById('message-modal').classList.remove('hidden');
         };
 
         // --- Initial Load ---
         
-        // This is necessary to expose functions globally for HTML event handlers
+        // Expose functions globally for HTML event handlers
         window.openCheckoutModal = openCheckoutModal;
         window.closeCheckoutModal = closeCheckoutModal;
         window.selectLocation = selectLocation;
@@ -1337,6 +1469,7 @@
         window.performStockCheckAdjustment = performStockCheckAdjustment;
         window.performMassUpdate = performMassUpdate;
         window.saveLowStockComment = saveLowStockComment;
+        window.deleteTransaction = deleteTransaction; // New exported function
 
         initializeFirebase();
     </script>
