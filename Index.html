@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mitchell & Murdoch Stock Control</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root { font-family: 'Inter', sans-serif; }
+        .tab-active { @apply border-b-2 border-indigo-600 text-indigo-600; }
+        #app-container { min-height: 100vh; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app-container" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        <!-- Application will be rendered here -->
+    </div>
+
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, collection, onSnapshot, setDoc, updateDoc, increment, deleteDoc, query, where, addDoc, serverTimestamp, getDocs, runTransaction, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // IMPORTANT: Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // --- ADMIN CONFIGURATION (Simple Password) ---
+        const ADMIN_PASSWORD = 'admin'; // Hardcoded password for quick access
+        // ---------------------------------------------
+
+        let app, db, auth;
+        let userId = 'loading...';
+        let isAuthReady = false;
+
+        // Application State
+        let LOCATIONS = ['Dundee', 'Perth', 'Fife', 'Falkirk', 'Aberdeen']; 
+        let stockLevels = {}; 
+        let transactions = [];
+        let view = 'staff'; // 'staff' or 'admin'
+        let currentLocation = null; 
+        let adminTab = 'lowStockReview'; // Default admin tab
+        let issueQueue = {}; 
+        let filterState = {
+            itemName: '',
+            location: '',
+            type: '',
+            staffName: '',
+            startDate: '', 
+            endDate: ''    
+        };
+        const TRANSACTION_TYPES = ['REMOVE', 'MASS_REMOVE', 'MASS_ADD', 'CART_ISSUE']; 
+
+        // --- Utility Functions ---
+
+        const formatTimestamp = (timestamp) => {
+            if (!timestamp) return 'N/A';
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleDateString('en-GB', {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+        };
+        
+        // --- Firebase Initialization and Authentication ---
+
+        const initFirebase = async () => {
+            if (!firebaseConfig) {
+                console.error("Firebase config is not available.");
+                document.getElementById('app-container').innerHTML = '<div class="text-red-500 p-8">Error: Firebase configuration is missing.</div>';
+                return;
+            }
+
+            try {
+                // setLogLevel('debug'); 
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                await new Promise(resolve => {
+                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                        } else {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                            userId = auth.currentUser.uid;
+                        }
+                        isAuthReady = true;
+                        unsubscribe();
+                        resolve();
+                    });
+                });
+
+                console.log(`Firebase Initialized. User ID: ${userId}`);
+                setupListeners();
+                await seedInitialData(); 
+            } catch (error) {
+                console.error("Error during Firebase initialization or sign-in:", error);
+                document.getElementById('app-container').innerHTML = `<div class="text-red-500 p-8">Authentication Error: ${error.message}</div>`;
+            }
+        };
+        
+        // --- Data Seeding Function ---
+        const seedInitialData = async () => {
+            try {
+                // Seed Stock Data
+                const stockRef = getStockLevelsRef();
+                let snapshot = await getDocs(stockRef);
+                if (snapshot.empty) {
+                    const initialStock = [
+                        { id: 'Gloves-Medium', Dundee: 150, Perth: 80, Fife: 40, Falkirk: 120, Aberdeen: 200, threshold: 25 },
+                        { id: 'Aprons-Standard', Dundee: 10, Perth: 50, Fife: 15, Falkirk: 70, Aberdeen: 150, threshold: 30 },
+                        { id: 'Hand Sanitizer (L)', Dundee: 60, Perth: 20, Fife: 5, Falkirk: 30, Aberdeen: 80, threshold: 15 },
+                        { id: 'Safety Glasses', Dundee: 5, Perth: 10, Fife: 100, Falkirk: 150, Aberdeen: 50, threshold: 10 },
+                    ];
+                    for (const item of initialStock) {
+                        const { id, ...data } = item;
+                        await setDoc(doc(stockRef, id), data);
+                    }
+                    console.log("Initial stock data seeded.");
+                } else {
+                    // Check LOCATIONS based on existing data
+                    const doc = snapshot.docs[0];
+                    if (doc) {
+                        const data = doc.data();
+                        const existingLocations = Object.keys(data).filter(key => key !== 'threshold' && key !== 'id').sort();
+                        if(existingLocations.length > 0) {
+                            LOCATIONS = existingLocations;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Error seeding initial data:", e);
+            }
+        };
+
+        // --- Firestore Listeners ---
+
+        const getStockLevelsRef = () => collection(db, `/artifacts/${appId}/public/data/stock_levels`);
+        const getTransactionsRef = () => collection(db, `/artifacts/${appId}/public/data/stock_transactions`);
+
+        const setupListeners = () => {
+            if (!db || !isAuthReady) return;
+
+            // 1. Stock Levels Listener
+            onSnapshot(getStockLevelsRef(), (snapshot) => {
+                const newStockLevels = {};
+                let hasStockData = false;
+                snapshot.forEach(doc => {
+                    newStockLevels[doc.id] = { id: doc.id, ...doc.data() };
+                    hasStockData = true;
+                });
+                stockLevels = newStockLevels;
+
+                if (hasStockData) {
+                    const firstDocId = Object.keys(stockLevels)[0];
+                    const firstDoc = stockLevels[firstDocId];
+                    // Recalculate LOCATIONS based on the first item's properties
+                    const newLocations = Object.keys(firstDoc).filter(key => key !== 'threshold' && key !== 'id').sort();
+                    
+                    if (newLocations.length > 0 && JSON.stringify(LOCATIONS) !== JSON.stringify(newLocations)) {
+                        LOCATIONS = newLocations;
+                        if (currentLocation && !LOCATIONS.includes(currentLocation)) {
+                            currentLocation = null; // Reset location if the selected one was removed
+                        }
+                    }
+                }
+
+                renderApp();
+                // Special render for Mass Update tab to refresh display
+                if (view === 'admin' && adminTab === 'massUpdate') {
+                    const selectedItem = document.getElementById('mass-item')?.value;
+                    if (selectedItem) {
+                        window.updateMassUpdateStockDisplay(selectedItem);
+                    }
+                }
+            }, (error) => console.error("Error listening to stock levels:", error));
+
+            // 2. Transactions Listener
+            onSnapshot(getTransactionsRef(), (snapshot) => {
+                transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                                           .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                if (view === 'admin' || view === 'staff') renderApp(); 
+            }, (error) => console.error("Error listening to transactions:", error));
+        };
+
+        // --- Firestore Operations ---
+
+        const saveTransaction = async (data) => {
+            try {
+                await addDoc(getTransactionsRef(), {
+                    ...data,
+                    timestamp: serverTimestamp(),
+                    userId: userId,
+                });
+            } catch (e) {
+                console.error("Error recording transaction:", e);
+                showModal('Error', `Failed to log transaction: ${e.message}`, 'error');
+            }
+        };
+
+        const handleStockUpdate = async (itemName, location, quantityChange, staffName, type) => {
+            const stockDocRef = doc(getStockLevelsRef(), itemName);
+
+            try {
+                
+                await runTransaction(db, async (transaction) => {
+                    const stockDoc = await transaction.get(stockDocRef);
+
+                    if (!stockDoc.exists()) {
+                        throw new Error("Stock item not found.");
+                    }
+
+                    const currentLevels = stockDoc.data();
+                    const currentLevelAtLocation = currentLevels[location] || 0;
+
+                    const newLevel = currentLevelAtLocation + quantityChange;
+
+                    if ((type === 'REMOVE' || type === 'MASS_REMOVE' || type === 'CART_ISSUE') && newLevel < 0) {
+                        throw new Error(`Insufficient stock for ${itemName}. Only ${currentLevelAtLocation} in stock at ${location}.`);
+                    }
+
+                    transaction.update(stockDocRef, {
+                        [location]: increment(quantityChange)
+                    });
+                });
+
+                await saveTransaction({ itemName, location, quantityChange, staffName, type });
+                return { success: true, message: `${Math.abs(quantityChange)} unit(s) of ${itemName} ${quantityChange > 0 ? 'added to' : 'removed from'} ${location}.` };
+
+            } catch (e) {
+                console.error("Transaction failed:", e);
+                return { success: false, message: e.message };
+            }
+        };
+        
+        // --- Admin Authentication Logic (Simplified) ---
+
+        window.handleAdminLogin = (e) => {
+            e.preventDefault();
+            const passwordInput = document.getElementById('admin-password').value;
+            
+            if (passwordInput === ADMIN_PASSWORD) {
+                view = 'admin';
+                window.closeModal();
+                renderApp();
+            } else {
+                showModal('Login Failed', 'The password you entered is incorrect.', 'error');
+            }
+        };
+
+        window.handleAdminLogout = () => {
+            view = 'staff';
+            adminTab = 'lowStockReview';
+            renderApp();
+            showModal('Logged Out', 'You have been logged out of the admin panel.', 'info');
+        };
+
+        window.showAdminLogin = () => {
+            showModal('Admin Login', `
+                <form onsubmit="window.handleAdminLogin(event)" class="space-y-4">
+                    <p class="text-sm text-gray-600">Enter the admin password to access the management dashboard.</p>
+                    <div>
+                        <label for="admin-password" class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" id="admin-password" required 
+                               class="mt-1 block w-full p-3 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500" 
+                               placeholder="Admin Password (Hint: ${ADMIN_PASSWORD})">
+                    </div>
+                    <button type="submit" class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition-colors">
+                        <i data-lucide="lock" class="w-5 h-5 mr-1 inline"></i> Login
+                    </button>
+                </form>
+            `, 'info', false);
+        };
+
+        // --- Core UI Functions ---
+
+        const renderApp = () => {
+            const container = document.getElementById('app-container');
+            
+            // Get the display name for the admin bar
+            const adminDisplay = view === 'admin' ? 'Admin Panel' : 'Staff View';
+
+            container.innerHTML = `
+                <header class="mb-8">
+                    <h1 class="text-3xl font-bold text-indigo-700">Mitchell & Murdoch Stock Control</h1>
+                    <p class="text-sm text-gray-500">User ID: ${userId} | ${adminDisplay}</p>
+                    
+                    <div class="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between">
+                        <!-- View Toggles -->
+                        <div class="flex space-x-4 mb-3 sm:mb-0">
+                            <button onclick="window.setView('staff')" class="px-4 py-2 font-medium rounded-lg transition-colors ${view === 'staff' ? 'bg-indigo-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}">Staff View</button>
+                            ${view === 'admin' ? `
+                                <button onclick="window.handleAdminLogout()" class="px-4 py-2 font-medium rounded-lg transition-colors bg-red-600 text-white hover:bg-red-700">
+                                    <i data-lucide="log-out" class="w-4 h-4 mr-1 inline"></i> Logout
+                                </button>
+                            ` : `
+                                <button onclick="window.showAdminLogin()" class="px-4 py-2 font-medium rounded-lg transition-colors bg-gray-200 text-red-700 hover:bg-gray-300">
+                                    Admin Login
+                                </button>
+                            `}
+                        </div>
+                        
+                        <!-- Site Selector Buttons (Only in Staff View) -->
+                        ${view === 'staff' && LOCATIONS.length > 0 ? `
+                            <div class="mt-4 sm:mt-0 flex items-center space-x-2 w-full sm:w-auto overflow-x-auto pb-1">
+                                <span class="text-sm font-medium text-gray-700 whitespace-nowrap hidden md:block">Select Site:</span>
+                                <div class="flex flex-wrap gap-2">
+                                    ${LOCATIONS.map(loc => `
+                                        <button onclick="window.setLocationView('${loc}')" 
+                                                class="px-3 py-1 text-sm font-medium rounded-lg transition-colors shadow-sm whitespace-nowrap
+                                                ${currentLocation === loc ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-indigo-100 hover:text-indigo-700'}">
+                                            ${loc}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                        ${view === 'staff' && LOCATIONS.length === 0 ? `
+                            <p class="text-red-500 italic">No sites configured. Contact admin.</p>
+                        ` : ''}
+                    </div>
+                </header>
+                <div id="content"></div>
+                ${view === 'staff' && currentLocation && Object.keys(issueQueue).length > 0 ? renderFloatingCartButton() : ''}
+            `;
+            const content = document.getElementById('content');
+            if (view === 'staff') {
+                if (currentLocation && LOCATIONS.includes(currentLocation)) { 
+                    content.innerHTML = renderLocationView(currentLocation);
+                } else {
+                    content.innerHTML = renderLocationSelectionScreen();
+                }
+            } else if (view === 'admin') {
+                content.innerHTML = renderAdminView();
+                // Set the active tab content after rendering the full admin view structure
+                window.setAdminTab(adminTab); 
+            } else {
+                 // Should not happen if logic is correct, but handles fallback
+                content.innerHTML = renderAdminLoginFallback();
+            }
+            lucide.createIcons(); 
+        };
+        
+        const renderAdminLoginFallback = () => {
+             return `
+                <div class="p-8 text-center bg-white shadow-xl rounded-xl">
+                    <h2 class="text-2xl font-semibold text-red-700 mb-6">Access Denied</h2>
+                    <p class="text-gray-600 mb-8">You must log in as an administrator to access this panel. (Password Hint: ${ADMIN_PASSWORD})</p>
+                    <button onclick="window.showAdminLogin()" class="px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition-transform transform hover:scale-[1.03]">
+                        Go to Admin Login
+                    </button>
+                </div>
+            `;
+        }
+
+        const renderFloatingCartButton = () => {
+            const count = Object.keys(issueQueue).length;
+            if (count === 0) return '';
+            
+            const totalUnits = Object.values(issueQueue).reduce((sum, item) => sum + item.quantity, 0);
+
+            return `
+                <button onclick="window.showIssueCartModal()"
+                    class="fixed bottom-6 right-6 p-4 bg-indigo-600 text-white font-bold rounded-full shadow-2xl transition-transform transform hover:scale-105 flex items-center z-40">
+                    <i data-lucide="minus-circle" class="w-6 h-6 mr-2"></i>
+                    Remove Items (${totalUnits})
+                </button>
+            `;
+        };
+
+        const renderLocationSelectionScreen = () => {
+            return `
+                <div class="p-8 text-center bg-white shadow-xl rounded-xl">
+                    <h2 class="text-2xl font-semibold text-indigo-700 mb-6">Welcome, Staff Member</h2>
+                    <p class="text-gray-600 mb-8">Please select your operational site to view and manage stock levels.</p>
+                    ${LOCATIONS.length > 0 ? `
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl mx-auto">
+                            ${LOCATIONS.map(loc => `
+                                <button onclick="window.setLocationView('${loc}')"
+                                    class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-3 px-6 rounded-lg shadow-md transition-transform transform hover:scale-[1.03]">
+                                    ${loc}
+                                </button>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <p class="text-lg text-red-500 font-medium">No sites have been configured by the administrator yet.</p>
+                    `}
+                </div>
+            `;
+        };
+
+        const renderLocationView = (location) => {
+            const items = Object.values(stockLevels).sort((a, b) => a.id.localeCompare(b.id));
+
+            return `
+                <h2 class="text-2xl font-semibold text-gray-800 mb-6">Stock Levels at: <span class="text-indigo-600">${location}</span></h2>
+                <p class="text-sm text-gray-600 mb-4">Click "**Add to Cart**" repeatedly to increment the quantity for removal.</p>
+                
+                <div class="overflow-x-auto bg-white shadow-xl rounded-xl">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-indigo-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 z-10 bg-indigo-50 rounded-tl-xl">
+                                    Item
+                                </th>
+                                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Stock Level
+                                </th>
+                                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-xl">
+                                    Remove Stock (Add to Cart)
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${items.length === 0 ? `
+                                <tr>
+                                    <td colspan="3" class="px-6 py-4 text-center text-gray-500">
+                                        No stock items configured yet.
+                                    </td>
+                                </tr>
+                            ` : items.map(item => {
+                                const level = item[location] || 0; 
+                                const threshold = item.threshold || 0;
+                                const isLow = level <= threshold && level > 0;
+                                const isZero = level === 0;
+                                const color = isZero ? 'bg-red-100 text-red-700 border-red-500' : isLow ? 'bg-yellow-100 text-yellow-700 border-yellow-500' : 'bg-green-100 text-green-700 border-green-500';
+
+                                const queuedItem = issueQueue[item.id];
+                                const isQueued = queuedItem && queuedItem.location === location;
+                                const queuedQty = isQueued ? queuedItem.quantity : 0;
+
+                                return `
+                                    <tr>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 z-0 bg-white">
+                                            <span>${item.id}</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-center text-sm">
+                                            <span class="inline-flex items-center px-3 py-1 rounded-full font-semibold border ${color} min-w-[70px] justify-center shadow-sm">
+                                                ${level} 
+                                                ${isZero ? '<i data-lucide="bomb" class="w-4 h-4 ml-1 inline"></i>' : isLow ? '<i data-lucide="alert-triangle" class="w-4 h-4 ml-1 inline"></i>' : ''}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-center text-sm">
+                                            <button onclick="window.addItemToQueue('${item.id}', '${location}')"
+                                                class="ml-3 p-2 bg-indigo-100 text-indigo-600 hover:bg-indigo-200 rounded-lg transition duration-150 shadow-md transform hover:scale-105 text-sm flex items-center justify-center mx-auto ${isQueued ? 'border border-indigo-500 font-semibold' : ''}"
+                                                title="Add to Removal List">
+                                                <i data-lucide="minus-circle" class="w-4 h-4 mr-1"></i> ${isQueued ? `Add More (${queuedQty})` : 'Add to Cart'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        };
+
+        window.addItemToQueue = (itemName, location) => {
+            if (issueQueue[itemName] && issueQueue[itemName].location === location) {
+                issueQueue[itemName].quantity += 1;
+            } else {
+                issueQueue[itemName] = { quantity: 1, location: location };
+            }
+            
+            renderApp(); 
+        };
+        
+        window.showIssueCartModal = () => {
+            const itemsInQueue = Object.keys(issueQueue).map(key => ({
+                itemName: key,
+                ...issueQueue[key]
+            }));
+
+            const totalUnits = itemsInQueue.reduce((sum, item) => sum + item.quantity, 0);
+            const suggestedLocation = itemsInQueue.length > 0 ? itemsInQueue[0].location : currentLocation;
+
+            const cartListHtml = itemsInQueue.map(item => `
+                <div class="flex justify-between items-center py-2 border-b last:border-b-0">
+                    <span class="font-medium text-gray-800">${item.itemName}</span>
+                    <div class="flex items-center space-x-2">
+                        <input type="number" 
+                               min="1" 
+                               value="${item.quantity}" 
+                               id="cart-qty-${item.itemName.replace(/\s/g, '-')}"
+                               onchange="window.updateCartItem('${item.itemName}', this.value)"
+                               class="w-16 p-1 border border-gray-300 rounded-md text-center text-sm shadow-sm"
+                        >
+                        <button onclick="window.removeFromCart('${item.itemName}')" class="text-red-500 hover:text-red-700 p-1">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+
+            showModal(`Remove Items Confirmation (${totalUnits} unit${totalUnits !== 1 ? 's' : ''})`, `
+                <p class="text-gray-700 mb-4 font-semibold">Ready to confirm the removal of these items from stock at **${suggestedLocation}**.</p>
+                <form id="cart-form" onsubmit="window.handleProcessQueue(event)" class="space-y-4">
+                    <!-- Staff Details -->
+                    <div class="p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                        <h4 class="font-semibold text-indigo-700 mb-2">Removal Details (Required)</h4>
+                        <div>
+                            <label for="issue-staff-name" class="block text-sm font-medium text-gray-700">Your Name</label>
+                            <input type="text" id="issue-staff-name" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="e.g., Jane Doe">
+                        </div>
+                        <div class="mt-3">
+                            <label for="issue-location" class="block text-sm font-medium text-gray-700">Location to Remove From</label>
+                            <select id="issue-location" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
+                                ${LOCATIONS.map(loc => `<option value="${loc}" ${suggestedLocation === loc ? 'selected' : ''}>${loc}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Cart List -->
+                    <div class="max-h-60 overflow-y-auto border border-gray-200 p-3 rounded-lg bg-white shadow-inner">
+                        <h4 class="font-semibold text-gray-700 mb-2">Items and Quantities to Remove:</h4>
+                        ${cartListHtml}
+                    </div>
+
+                    <div class="flex justify-between items-center pt-4 border-t">
+                        <button type="button" onclick="window.closeModal(); window.clearCart();" class="text-sm px-3 py-2 text-gray-700 hover:text-red-700 transition duration-150 flex items-center">
+                            <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i> Clear List
+                        </button>
+                        <div class="flex space-x-2">
+                            <button type="button" onclick="window.closeModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">Cancel</button>
+                            <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-transform transform hover:scale-[1.01]">
+                                <i data-lucide="package-minus" class="w-5 h-5 mr-1"></i> Confirm Removal (${totalUnits})
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            `, 'info', false);
+        };
+
+        window.updateCartItem = (itemName, quantity) => {
+            const qty = parseInt(quantity, 10);
+            if (qty < 1 || isNaN(qty)) {
+                issueQueue[itemName].quantity = 1;
+                document.getElementById(`cart-qty-${itemName.replace(/\s/g, '-')}`).value = 1;
+            } else {
+                issueQueue[itemName].quantity = qty;
+            }
+            window.closeModal();
+            window.showIssueCartModal();
+        };
+
+        window.removeFromCart = (itemName) => {
+            delete issueQueue[itemName];
+            window.closeModal();
+            renderApp(); 
+            if (Object.keys(issueQueue).length > 0) {
+                 window.showIssueCartModal();
+            }
+        };
+
+        window.clearCart = () => {
+            issueQueue = {};
+            renderApp();
+            showModal('Cart Cleared', 'All items have been removed from the issue cart.', 'info');
+        };
+
+        window.handleProcessQueue = async (e) => {
+            e.preventDefault();
+            window.closeModal(); 
+            
+            const staffName = document.getElementById('issue-staff-name').value;
+            const location = document.getElementById('issue-location').value;
+
+            if (!staffName || !location) {
+                showModal('Error', 'Please enter your name and select a location.', 'error');
+                return;
+            }
+
+            const itemsToProcess = Object.keys(issueQueue).map(key => ({
+                itemName: key,
+                quantity: issueQueue[key].quantity,
+                location: location // Use the location selected in the modal
+            }));
+            
+            showModal('Processing...', 'Updating stock levels in Firestore...', 'loading', false);
+
+            let allSuccessful = true;
+            let failureMessages = [];
+
+            for (const item of itemsToProcess) {
+                const result = await handleStockUpdate(
+                    item.itemName, 
+                    item.location, 
+                    -item.quantity, // Quantity is negative for removal
+                    staffName, 
+                    'CART_ISSUE'
+                );
+
+                if (!result.success) {
+                    allSuccessful = false;
+                    failureMessages.push(result.message);
+                }
+            }
+            
+            if (allSuccessful) {
+                issueQueue = {}; // Clear queue only on success
+                renderApp();
+                showModal('Success!', `Successfully processed removal of ${itemsToProcess.length} items from ${location}.`, 'success');
+            } else {
+                window.closeModal(); // Close loading modal
+                // Restore the failed items to the queue and show errors
+                showModal('Partial Failure', `Some items failed to process. Please review the errors below and try again. Items with errors remain in the cart.`, 'error', true, failureMessages.join('<br>'));
+            }
+        };
+
+        // --- Admin View Functions ---
+
+        window.setView = (newView) => {
+            if (newView === 'admin' && view !== 'admin') {
+                window.showAdminLogin();
+            } else {
+                view = newView;
+                renderApp();
+            }
+        };
+
+        window.setLocationView = (location) => {
+            currentLocation = location;
+            renderApp();
+        };
+
+        window.setAdminTab = (tab) => {
+            // 1. Update state
+            adminTab = tab;
+            
+            // 2. Update tab button styles manually
+            const tabButtons = document.querySelectorAll('#admin-tab-bar button');
+            tabButtons.forEach(button => {
+                const buttonTabId = button.getAttribute('data-tab-id');
+                if (buttonTabId === tab) {
+                    button.classList.add('tab-active');
+                    button.classList.remove('text-gray-500', 'hover:text-gray-700');
+                } else {
+                    button.classList.remove('tab-active');
+                    button.classList.add('text-gray-500', 'hover:text-gray-700');
+                }
+            });
+
+            // 3. Update tab content
+            const tabContent = document.getElementById('admin-tab-content');
+            if (!tabContent) return; // Wait for the element to exist
+
+            tabContent.innerHTML = ''; 
+
+            if (tab === 'lowStockReview') {
+                tabContent.innerHTML = renderLowStockReview();
+            } else if (tab === 'massUpdate') {
+                tabContent.innerHTML = renderMassUpdateForm();
+                // Ensure stock display is updated after the form is rendered
+                if (Object.keys(stockLevels).length > 0) {
+                    const firstItem = document.getElementById('mass-item')?.value || Object.keys(stockLevels)[0];
+                    window.updateMassUpdateStockDisplay(firstItem);
+                }
+            } else if (tab === 'addRemoveStock') {
+                tabContent.innerHTML = renderAddRemoveStockForm();
+            } else if (tab === 'transactionLog') {
+                tabContent.innerHTML = renderTransactionLog();
+            } else if (tab === 'itemManagement') { // NEW TAB
+                tabContent.innerHTML = renderItemManagementForm();
+            }
+            // Recreate icons for the dynamically added content
+            lucide.createIcons(); 
+        };
+
+        const renderAdminView = () => {
+            const tabs = [
+                { id: 'lowStockReview', label: 'Low Stock Review', icon: 'alert-triangle' },
+                { id: 'massUpdate', label: 'Mass Stock Update', icon: 'layout-list' },
+                { id: 'addRemoveStock', label: 'Single Item Update', icon: 'clipboard-list' },
+                { id: 'itemManagement', label: 'Item Management', icon: 'tool' }, // NEW TAB
+                { id: 'transactionLog', label: 'Transaction Log', icon: 'file-text' }
+            ];
+
+            return `
+                <h2 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-3">Admin Dashboard</h2>
+                
+                <div id="admin-tab-bar" class="flex flex-wrap border-b border-gray-200 mb-6 bg-white rounded-t-xl shadow-md p-2">
+                    ${tabs.map(tab => `
+                        <button onclick="window.setAdminTab('${tab.id}')"
+                                data-tab-id="${tab.id}"
+                                class="flex items-center px-4 py-2 font-medium transition-colors 
+                                        ${adminTab === tab.id ? 'tab-active' : 'text-gray-500 hover:text-gray-700'}">
+                            <i data-lucide="${tab.icon}" class="w-5 h-5 mr-2"></i>
+                            ${tab.label}
+                        </button>
+                    `).join('')}
+                </div>
+                
+                <div id="admin-tab-content" class="bg-white p-6 rounded-xl shadow-xl">
+                    <!-- Content will be rendered by setAdminTab -->
+                </div>
+            `;
+        };
+
+        // --- Admin Tab Content Renderers ---
+        
+        // --- NEW ITEM MANAGEMENT FUNCTIONS ---
+        window.handleAddItem = async (e) => {
+            e.preventDefault();
+            const itemName = document.getElementById('new-item-name').value.trim();
+            const threshold = parseInt(document.getElementById('new-item-threshold').value, 10);
+
+            if (!itemName) {
+                showModal('Error', 'Item name is required.', 'error');
+                return;
+            }
+            if (isNaN(threshold) || threshold < 0) {
+                showModal('Error', 'Threshold must be a non-negative number.', 'error');
+                return;
+            }
+            
+            if (stockLevels[itemName]) {
+                showModal('Error', `Item "${itemName}" already exists.`, 'error');
+                return;
+            }
+
+            const stockDocRef = doc(getStockLevelsRef(), itemName);
+            
+            // Prepare initial stock data (0 for all current locations)
+            const newStockData = {
+                threshold: threshold
+            };
+            LOCATIONS.forEach(loc => {
+                newStockData[loc] = 0;
+            });
+            
+            showModal('Processing...', `Adding new item: ${itemName}...`, 'loading', false);
+
+            try {
+                await setDoc(stockDocRef, newStockData);
+                window.closeModal();
+                showModal('Success!', `New item **${itemName}** added successfully with threshold **${threshold}**. Stock levels initialized to 0 at all sites.`, 'success');
+                e.target.reset(); // Clear form
+            } catch (e) {
+                window.closeModal();
+                console.error("Error adding new item:", e);
+                showModal('Error', `Failed to add item: ${e.message}`, 'error');
+            }
+        };
+
+        window.promptDeleteItem = (itemName) => {
+            showModal('Confirm Deletion', 
+                `<p class="text-red-600 font-semibold">Are you sure you want to permanently delete the item: **${itemName}**?</p>
+                 <p class="text-sm text-gray-700 mt-2">This action is irreversible and will remove all stock tracking data for this item.</p>
+                 <div class="mt-4 flex justify-end space-x-2">
+                    <button type="button" onclick="window.closeModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">Cancel</button>
+                    <button type="button" onclick="window.handleDeleteItem('${itemName}')" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">Delete Permanently</button>
+                 </div>`, 
+                 'error', true
+            );
+        };
+
+        window.handleDeleteItem = async (itemName) => {
+            window.closeModal(); // Close confirmation modal
+            const stockDocRef = doc(getStockLevelsRef(), itemName);
+
+            showModal('Processing...', `Deleting item: ${itemName}...`, 'loading', false);
+
+            try {
+                await deleteDoc(stockDocRef);
+                window.closeModal();
+                showModal('Success!', `Item **${itemName}** has been permanently removed from the stock list.`, 'success');
+                // The onSnapshot listener will automatically call renderApp()
+            } catch (e) {
+                window.closeModal();
+                console.error("Error deleting item:", e);
+                showModal('Error', `Failed to delete item: ${e.message}`, 'error');
+            }
+        };
+
+        const renderItemManagementForm = () => {
+            const items = Object.keys(stockLevels).sort();
+            
+            return `
+                <h3 class="text-xl font-semibold mb-6 text-indigo-700 flex items-center">
+                    <i data-lucide="tool" class="w-6 h-6 mr-2"></i> Stock Item Creation and Deletion
+                </h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <!-- Add New Item -->
+                    <div class="p-5 border border-green-300 rounded-lg bg-green-50 shadow-md">
+                        <h4 class="font-bold text-lg text-green-700 mb-4 flex items-center">
+                            <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i> Add New Stock Item
+                        </h4>
+                        <form onsubmit="window.handleAddItem(event)" class="space-y-4">
+                            <div>
+                                <label for="new-item-name" class="block text-sm font-medium text-gray-700">Item Name (Must be Unique)</label>
+                                <input type="text" id="new-item-name" required placeholder="e.g., FFP3 Masks" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
+                            </div>
+                            <div>
+                                <label for="new-item-threshold" class="block text-sm font-medium text-gray-700">Low Stock Threshold</label>
+                                <input type="number" id="new-item-threshold" required min="0" value="10" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
+                                <p class="text-xs text-gray-500 mt-1">Triggers an alert when stock at a site falls below this number.</p>
+                            </div>
+                            <button type="submit" class="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 transition-colors">
+                                <i data-lucide="package-plus" class="w-5 h-5 mr-2"></i> Create New Item
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Delete Existing Item -->
+                    <div class="p-5 border border-red-300 rounded-lg bg-red-50 shadow-md">
+                        <h4 class="font-bold text-lg text-red-700 mb-4 flex items-center">
+                            <i data-lucide="trash-2" class="w-5 h-5 mr-2"></i> Delete Existing Stock Item
+                        </h4>
+                        ${items.length === 0 ? `
+                            <p class="text-sm text-red-700 italic">No items available to delete.</p>
+                        ` : `
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="delete-item-name" class="block text-sm font-medium text-gray-700">Select Item to Delete</label>
+                                    <select id="delete-item-name" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
+                                        ${items.map(item => `<option value="${item}">${item} (Threshold: ${stockLevels[item].threshold})</option>`).join('')}
+                                    </select>
+                                </div>
+                                <button onclick="window.promptDeleteItem(document.getElementById('delete-item-name').value)"
+                                        type="button" 
+                                        class="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-50"
+                                        ${items.length === 0 ? 'disabled' : ''}>
+                                    <i data-lucide="package-x" class="w-5 h-5 mr-2"></i> Delete Selected Item
+                                </button>
+                                <p class="text-xs text-red-700 mt-1 font-semibold">WARNING: This permanently removes the item and cannot be undone.</p>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+        };
+        // --- END NEW ITEM MANAGEMENT FUNCTIONS ---
+
+        const renderLowStockReview = () => {
+            const lowStockItems = Object.values(stockLevels)
+                .map(item => {
+                    // Filter out non-location keys like 'id' and 'threshold'
+                    const validLocations = LOCATIONS.filter(loc => item.hasOwnProperty(loc));
+
+                    const lowStockLocations = validLocations.filter(loc => (item[loc] || 0) <= item.threshold);
+                    return { ...item, lowStockLocations };
+                })
+                .filter(item => item.lowStockLocations.length > 0)
+                .sort((a, b) => a.id.localeCompare(b.id));
+
+            return `
+                <h3 class="text-xl font-semibold mb-4 text-red-600 flex items-center">
+                    <i data-lucide="alert-circle" class="w-6 h-6 mr-2"></i> Critical Low Stock Review
+                </h3>
+                <p class="text-gray-600 mb-6">These items are at or below their set threshold and require immediate ordering or replenishment.</p>
+                
+                ${lowStockItems.length === 0 ? `
+                    <div class="p-4 bg-green-100 text-green-700 rounded-lg text-center font-medium">
+                        <i data-lucide="check-circle" class="w-5 h-5 mr-2 inline"></i> All stock levels are currently above their thresholds across all sites.
+                    </div>
+                ` : `
+                    <div class="space-y-4">
+                        ${lowStockItems.map(item => `
+                            <div class="p-4 border border-red-300 rounded-lg bg-red-50 shadow-sm">
+                                <h4 class="font-bold text-lg text-red-700 mb-2">${item.id} (Threshold: ${item.threshold})</h4>
+                                <ul class="list-disc list-inside space-y-1">
+                                    ${item.lowStockLocations.map(loc => `
+                                        <li class="text-red-600">
+                                            <span class="font-semibold">${loc}:</span> Current Stock is **${item[loc] || 0}**
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            </div>
+                        `).join('')}
+                    </div>
+                `}
+            `;
+        };
+        
+        const renderMassUpdateForm = () => {
+            const items = Object.keys(stockLevels).sort();
+            
+            return `
+                <h3 class="text-xl font-semibold mb-4 text-indigo-700 flex items-center">
+                    <i data-lucide="package" class="w-6 h-6 mr-2"></i> Mass Stock Replenishment / Update
+                </h3>
+                <p class="text-gray-600 mb-6">Quickly update stock levels across all locations for a specific item, such as after receiving a large delivery.</p>
+                
+                <form onsubmit="window.handleMassStockUpdate(event)" class="space-y-6">
+                    <!-- Item Selection -->
+                    <div>
+                        <label for="mass-item" class="block text-sm font-medium text-gray-700">Select Item</label>
+                        <select id="mass-item" onchange="window.updateMassUpdateStockDisplay(this.value)" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
+                            ${items.length === 0 ? '<option value="" disabled>No items available</option>' : 
+                                items.map(item => `<option value="${item}">${item}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <!-- Current Levels Display (Dynamic) -->
+                    <div id="mass-current-levels" class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <p class="text-gray-500">Select an item to see current stock levels.</p>
+                    </div>
+
+                    <!-- Quantity Input -->
+                    <div>
+                        <label for="mass-quantity" class="block text-sm font-medium text-gray-700">Quantity to Add/Remove (e.g., 50 for Add, -10 for Remove)</label>
+                        <input type="number" id="mass-quantity" required placeholder="e.g., 50" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
+                    </div>
+
+                    <!-- Staff Name -->
+                    <div>
+                        <label for="mass-staff-name" class="block text-sm font-medium text-gray-700">Admin Name</label>
+                        <input type="text" id="mass-staff-name" required placeholder="Your Name" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
+                    </div>
+
+                    <button type="submit" class="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors transform hover:scale-[1.005]">
+                        <i data-lucide="truck" class="w-5 h-5 mr-2"></i> Confirm Mass Stock Update
+                    </button>
+                </form>
+            `;
+        };
+
+        window.updateMassUpdateStockDisplay = (itemName) => {
+            const item = stockLevels[itemName];
+            const displayDiv = document.getElementById('mass-current-levels');
+
+            if (!item || !displayDiv) return;
+
+            const total = LOCATIONS.reduce((sum, loc) => sum + (item[loc] || 0), 0);
+            
+            displayDiv.innerHTML = `
+                <h4 class="font-semibold text-gray-800 mb-3">Current Stock Levels for ${itemName} (Total: ${total})</h4>
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    ${LOCATIONS.map(loc => `
+                        <div class="flex justify-between p-2 bg-white rounded-md border">
+                            <span class="font-medium text-gray-600">${loc}</span>
+                            <span class="font-bold text-indigo-600">${item[loc] || 0}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            lucide.createIcons();
+        };
+
+        window.handleMassStockUpdate = async (e) => {
+            e.preventDefault();
+            
+            const itemName = document.getElementById('mass-item').value;
+            const quantity = parseInt(document.getElementById('mass-quantity').value, 10);
+            const staffName = document.getElementById('mass-staff-name').value;
+
+            if (isNaN(quantity) || quantity === 0) {
+                showModal('Validation Error', 'Quantity must be a non-zero number.', 'error');
+                return;
+            }
+
+            const type = quantity > 0 ? 'MASS_ADD' : 'MASS_REMOVE';
+            const action = quantity > 0 ? 'adding' : 'removing';
+            
+            showModal('Processing...', `Mass ${action} ${Math.abs(quantity)} units of ${itemName} at all sites...`, 'loading', false);
+
+            let allSuccessful = true;
+            let failureMessages = [];
+
+            for (const location of LOCATIONS) {
+                const result = await handleStockUpdate(
+                    itemName, 
+                    location, 
+                    quantity,
+                    staffName, 
+                    type
+                );
+
+                if (!result.success) {
+                    allSuccessful = false;
+                    failureMessages.push(`**${location}:** ${result.message}`);
+                }
+            }
+            
+            window.closeModal(); // Close loading modal
+
+            if (allSuccessful) {
+                showModal('Success!', `Mass update successful: ${Math.abs(quantity)} units ${action} to all ${LOCATIONS.length} sites for ${itemName}.`, 'success');
+                e.target.reset(); // Clear form
+            } else {
+                showModal('Partial Failure', `Mass update had issues. Please review the errors below.`, 'error', true, failureMessages.join('<br>'));
+            }
+        };
+
+        const renderAddRemoveStockForm = () => {
+            const items = Object.keys(stockLevels).sort();
+            
+            return `
+                <h3 class="text-xl font-semibold mb-4 text-indigo-700 flex items-center">
+                    <i data-lucide="sliders" class="w-6 h-6 mr-2"></i> Single Item Stock Adjustment
+                </h3>
+                <p class="text-gray-600 mb-6">Add or remove a specific quantity of an item at a single location. Use negative numbers to remove stock.</p>
+                
+                <form onsubmit="window.handleSingleStockUpdate(event)" class="space-y-6">
+                    <!-- Item Selection -->
+                    <div>
+                        <label for="single-item" class="block text-sm font-medium text-gray-700">Select Item</label>
+                        <select id="single-item" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
+                            ${items.length === 0 ? '<option value="" disabled>No items available</option>' : 
+                                items.map(item => `<option value="${item}">${item}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <!-- Location Selection -->
+                    <div>
+                        <label for="single-location" class="block text-sm font-medium text-gray-700">Select Location</label>
+                        <select id="single-location" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md shadow-sm">
+                            ${LOCATIONS.map(loc => `<option value="${loc}">${loc}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <!-- Quantity Input -->
+                    <div>
+                        <label for="single-quantity" class="block text-sm font-medium text-gray-700">Quantity Change (+ for Add, - for Remove)</label>
+                        <input type="number" id="single-quantity" required placeholder="e.g., 10 or -5" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
+                    </div>
+
+                    <!-- Staff Name -->
+                    <div>
+                        <label for="single-staff-name" class="block text-sm font-medium text-gray-700">Admin Name</label>
+                        <input type="text" id="single-staff-name" required placeholder="Your Name" class="mt-1 block w-full p-3 border-gray-300 rounded-md shadow-sm">
+                    </div>
+
+                    <button type="submit" class="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors transform hover:scale-[1.005]">
+                        <i data-lucide="save" class="w-5 h-5 mr-2"></i> Confirm Single Stock Adjustment
+                    </button>
+                </form>
+            `;
+        };
+
+        window.handleSingleStockUpdate = async (e) => {
+            e.preventDefault();
+            
+            const itemName = document.getElementById('single-item').value;
+            const location = document.getElementById('single-location').value;
+            const quantity = parseInt(document.getElementById('single-quantity').value, 10);
+            const staffName = document.getElementById('single-staff-name').value;
+
+            if (isNaN(quantity) || quantity === 0) {
+                showModal('Validation Error', 'Quantity must be a non-zero number.', 'error');
+                return;
+            }
+
+            const type = quantity > 0 ? 'MASS_ADD' : 'MASS_REMOVE'; // Reusing transaction types for simplicity
+            const action = quantity > 0 ? 'adding' : 'removing';
+            
+            showModal('Processing...', `Adjusting stock for ${itemName} at ${location}...`, 'loading', false);
+
+            const result = await handleStockUpdate(
+                itemName, 
+                location, 
+                quantity,
+                staffName, 
+                type
+            );
+            
+            window.closeModal(); // Close loading modal
+
+            if (result.success) {
+                showModal('Success!', `Successfully adjusted stock: ${Math.abs(quantity)} units ${action} to ${location} for ${itemName}.`, 'success');
+                e.target.reset(); // Clear form
+            } else {
+                showModal('Update Failed', result.message, 'error');
+            }
+        };
+
+        const renderTransactionLog = () => {
+            const items = Object.keys(stockLevels).sort();
+
+            const filteredTransactions = transactions.filter(t => {
+                let match = true;
+
+                // Item Name Filter
+                if (filterState.itemName && t.itemName !== filterState.itemName) {
+                    match = false;
+                }
+                
+                // Location Filter
+                if (filterState.location && t.location !== filterState.location) {
+                    match = false;
+                }
+
+                // Type Filter
+                if (filterState.type && t.type !== filterState.type) {
+                    match = false;
+                }
+
+                // Staff Name Filter (case insensitive contains)
+                if (filterState.staffName) {
+                    if (!t.staffName || !t.staffName.toLowerCase().includes(filterState.staffName.toLowerCase())) {
+                        match = false;
+                    }
+                }
+
+                // Date Filter (simple check)
+                if (t.timestamp && filterState.startDate && filterState.endDate) {
+                    const txDate = t.timestamp.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
+                    const start = new Date(filterState.startDate);
+                    const end = new Date(filterState.endDate);
+                    end.setDate(end.getDate() + 1); // Make end date inclusive
+                    
+                    if (txDate < start || txDate >= end) {
+                        match = false;
+                    }
+                }
+
+
+                return match;
+            });
+
+            return `
+                <h3 class="text-xl font-semibold mb-4 text-indigo-700 flex items-center">
+                    <i data-lucide="history" class="w-6 h-6 mr-2"></i> Stock Transaction Log
+                </h3>
+                <p class="text-gray-600 mb-6">Detailed record of all stock adjustments across all sites.</p>
+
+                <!-- Filters -->
+                <div class="p-4 bg-indigo-50 rounded-lg mb-6 shadow-inner border border-indigo-200">
+                    <h4 class="font-semibold text-indigo-700 mb-3">Filters</h4>
+                    <form id="transaction-filters" onchange="window.handleFilterChange(event)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        
+                        <div>
+                            <label for="filter-itemName" class="block text-xs font-medium text-gray-700">Item Name</label>
+                            <select id="filter-itemName" class="mt-1 block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
+                                <option value="">All Items</option>
+                                ${items.map(item => `<option value="${item}" ${filterState.itemName === item ? 'selected' : ''}>${item}</option>`).join('')}
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label for="filter-location" class="block text-xs font-medium text-gray-700">Location</label>
+                            <select id="filter-location" class="mt-1 block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
+                                <option value="">All Locations</option>
+                                ${LOCATIONS.map(loc => `<option value="${loc}" ${filterState.location === loc ? 'selected' : ''}>${loc}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="filter-type" class="block text-xs font-medium text-gray-700">Type</label>
+                            <select id="filter-type" class="mt-1 block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
+                                <option value="">All Types</option>
+                                ${TRANSACTION_TYPES.map(type => `<option value="${type}" ${filterState.type === type ? 'selected' : ''}>${type.replace('_', ' ')}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="filter-staffName" class="block text-xs font-medium text-gray-700">Staff Name</label>
+                            <input type="text" id="filter-staffName" value="${filterState.staffName}" placeholder="e.g. Jane" class="mt-1 block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
+                        </div>
+
+                        <div class="sm:col-span-2 lg:col-span-1">
+                            <label for="filter-startDate" class="block text-xs font-medium text-gray-700">Date Range</label>
+                            <div class="flex space-x-2 mt-1">
+                                <input type="date" id="filter-startDate" value="${filterState.startDate}" class="block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
+                                <input type="date" id="filter-endDate" value="${filterState.endDate}" class="block w-full text-sm p-2 border-gray-300 rounded-md shadow-sm">
+                            </div>
+                        </div>
+
+                    </form>
+                    <div class="mt-4 flex justify-end">
+                        <button onclick="window.resetFilters()" class="px-3 py-1 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 transition-colors flex items-center">
+                            <i data-lucide="refresh-cw" class="w-4 h-4 mr-1"></i> Reset Filters
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Log Table -->
+                <div class="overflow-x-auto shadow-lg rounded-lg border">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Change</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Staff</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${filteredTransactions.length === 0 ? `
+                                <tr>
+                                    <td colspan="6" class="px-6 py-4 text-center text-gray-500 italic">No transactions match the current filters.</td>
+                                </tr>
+                            ` : filteredTransactions.map(t => {
+                                const isRemoval = t.quantityChange < 0;
+                                const changeClass = isRemoval ? 'text-red-600 font-bold' : 'text-green-600 font-bold';
+                                return `
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formatTimestamp(t.timestamp)}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${t.itemName}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${t.location}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-right ${changeClass}">
+                                            ${t.quantityChange > 0 ? '+' : ''}${t.quantityChange}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-xs">
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRemoval ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}">
+                                                ${t.type.replace('_', ' ')}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${t.staffName || 'N/A'}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        };
+
+        window.handleFilterChange = (e) => {
+            if (e.target.id.startsWith('filter-')) {
+                const key = e.target.id.replace('filter-', '');
+                filterState[key] = e.target.value;
+                window.setAdminTab('transactionLog');
+            }
+        };
+
+        window.resetFilters = () => {
+            filterState = {
+                itemName: '',
+                location: '',
+                type: '',
+                staffName: '',
+                startDate: '',
+                endDate: ''
+            };
+            window.setAdminTab('transactionLog');
+        };
+
+        // --- Modal Component ---
+
+        const showModal = (title, content, type = 'info', sticky = false, secondaryContent = null) => {
+            let modal = document.getElementById('global-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'global-modal';
+                modal.className = 'fixed inset-0 z-50 overflow-y-auto hidden';
+                document.body.appendChild(modal);
+            }
+
+            let iconHtml = '';
+            let titleClass = '';
+            
+            switch (type) {
+                case 'success':
+                    iconHtml = '<i data-lucide="check-circle" class="w-8 h-8 text-green-500"></i>';
+                    titleClass = 'text-green-700';
+                    break;
+                case 'error':
+                    iconHtml = '<i data-lucide="x-circle" class="w-8 h-8 text-red-500"></i>';
+                    titleClass = 'text-red-700';
+                    break;
+                case 'loading':
+                    iconHtml = '<svg class="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+                    titleClass = 'text-indigo-700';
+                    break;
+                case 'info':
+                default:
+                    iconHtml = '<i data-lucide="info" class="w-8 h-8 text-indigo-500"></i>';
+                    titleClass = 'text-indigo-700';
+            }
+
+            modal.innerHTML = `
+                <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                    <div class="fixed inset-0 transition-opacity" aria-hidden="true">
+                        <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
+                    </div>
+                    <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+                    
+                    <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                            <div class="sm:flex sm:items-start">
+                                <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full sm:mx-0 sm:h-10 sm:w-10">
+                                    ${iconHtml}
+                                </div>
+                                <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                    <h3 class="text-lg leading-6 font-medium ${titleClass}" id="modal-title">
+                                        ${title}
+                                    </h3>
+                                    <div class="mt-2 text-gray-800" id="modal-content-main">
+                                        ${content}
+                                    </div>
+                                    ${secondaryContent ? `<div class="mt-4 p-3 bg-gray-100 rounded-md border border-gray-200 text-sm max-h-40 overflow-y-auto">${secondaryContent}</div>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        ${type !== 'loading' && !sticky ? `
+                            <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                                <button type="button" onclick="window.closeModal()" 
+                                        class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">
+                                    Close
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+            modal.classList.remove('hidden');
+        };
+
+        window.closeModal = () => {
+            const modal = document.getElementById('global-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        };
+
+
+        // --- Startup ---
+        window.onload = initFirebase;
+    </script>
+</body>
+</html>
