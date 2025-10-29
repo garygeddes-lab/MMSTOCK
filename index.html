@@ -203,12 +203,11 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, runTransaction, getDocs, limit, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { setLogLevel, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 
 
         // --- 1. FIREBASE CONFIGURATION (LIVE DEPLOYMENT READY) ---
-        // This is YOUR UNIQUE configuration for mmstock-8bcdf.firebaseapp.com
-        // This section REPLACES the need for the __global_variables from the Canvas.
+        // Configuration confirmed by user and sourced from Firebase Console.
         const LIVE_FIREBASE_CONFIG = {
             apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
             authDomain: "mmstock-8bcdf.firebaseapp.com",
@@ -266,6 +265,25 @@
             document.getElementById('modal-backdrop').classList.add('hidden');
             document.getElementById('modal-backdrop').classList.remove('flex');
         };
+        
+        // Helper function for non-blocking alerts
+        const alertUser = (title, message, type) => {
+            const bgColor = type === 'green' ? 'bg-green-100' : (type === 'red' ? 'bg-red-100' : 'bg-yellow-100');
+            const textColor = type === 'green' ? 'text-green-700' : (type === 'red' ? 'text-red-700' : 'text-yellow-700');
+            const headerColor = type === 'green' ? 'text-green-600' : (type === 'red' ? 'text-red-600' : 'text-yellow-600');
+            const buttonColor = type === 'green' ? 'bg-green-600' : (type === 'red' ? 'bg-red-600' : 'bg-yellow-600');
+
+            const modalContent = `
+                <div class="${bgColor} p-4 rounded-lg">
+                    <h3 class="text-xl font-bold ${headerColor} mb-2">${title}</h3>
+                    <p class="${textColor} mb-4">${message}</p>
+                </div>
+                <div class="flex justify-end mt-4">
+                    <button onclick="hideModal()" class="px-4 py-2 ${buttonColor} text-white font-medium rounded-lg hover:opacity-90">Dismiss</button>
+                </div>
+            `;
+            showModal(modalContent);
+        };
 
         // --- 6. AUTHENTICATION AND INITIALIZATION ---
 
@@ -306,7 +324,12 @@
                 
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                showModal(`<h3 class="text-xl font-bold text-red-600 mb-4">Connection Error</h3><p>Could not connect to the database. Check your Firebase Configuration (LIVE_FIREBASE_CONFIG) and ensure Anonymous Auth is enabled. Error: ${error.message}</p><button onclick="hideModal()" class="mt-4 px-4 py-2 bg-gray-500 text-white rounded-lg">Close</button>`);
+                // Catch the specific config error here:
+                if (error.code === 'auth/configuration-not-found') {
+                     alertUser("Configuration Error", "Authentication failed. Please verify that Anonymous Authentication is enabled in your Firebase Console for project mmstock-8bcdf.", "red");
+                } else {
+                     alertUser("Connection Error", `Could not connect to the database. Error: ${error.message}`, "red");
+                }
             } finally {
                 showLoading(false);
             }
@@ -315,6 +338,8 @@
         // --- 7. DATA SEEDING (Ensures initial items and sites exist) ---
 
         const seedInitialData = async () => {
+            if (!isAuthReady) return;
+
             const stockRef = getStockLevelsRef();
             const itemsRef = getItemsRef();
             
@@ -333,7 +358,7 @@
                 }
 
                 // Initialize stock for all new items at all sites (set to 0)
-                const siteDocs = await getDocs(stockRef);
+                // We use setDoc(merge: true) to ensure we don't overwrite other fields if they exist
                 for (const site of SITE_LOCATIONS) {
                      const siteDocRef = doc(stockRef, site);
                      const siteData = {};
@@ -350,6 +375,8 @@
         // --- 8. REAL-TIME LISTENERS ---
 
         const setupListeners = () => {
+            if (!isAuthReady) return;
+
             // 1. Listen for Item Metadata Changes
             onSnapshot(getItemsRef(), (snapshot) => {
                 itemNames = {};
@@ -371,7 +398,8 @@
             }, (error) => console.error("Error listening to stock:", error));
 
             // 3. Listen for Transaction Changes (Admin Log)
-            onSnapshot(query(getTransactionsRef(), orderBy('timestamp', 'desc'), limit(50)), (snapshot) => {
+            const transactionsQuery = query(getTransactionsRef(), orderBy('timestamp', 'desc'), limit(50));
+            onSnapshot(transactionsQuery, (snapshot) => {
                 renderTransactionLog(snapshot.docs.map(doc => doc.data()));
             }, (error) => console.error("Error listening to transactions:", error));
         };
@@ -396,15 +424,16 @@
             const items = Object.values(itemNames).sort((a, b) => a.name.localeCompare(b.name));
 
             if (items.length === 0) {
-                list.innerHTML = '<p class="text-gray-500 col-span-full">No stock items are currently defined in the system.</p>';
+                list.innerHTML = '<p class="text-gray-500 col-span-full">No stock items are currently defined in the system. Use the Admin Panel to add items.</p>';
                 return;
             }
 
             items.forEach(item => {
                 const itemId = item.name;
                 const stock = currentSite ? (stockData[currentSite] ? stockData[currentSite][itemId] || 0 : 0) : '---';
-                const isLow = currentSite && stock <= item.threshold;
+                const isLow = currentSite && stock !== '---' && stock <= item.threshold;
                 const lowStockClass = isLow ? 'bg-red-100 border-red-500' : 'bg-white border-gray-200';
+                const removeDisabled = !currentSite || stock === 0;
                 
                 const card = document.createElement('div');
                 card.className = `stock-card p-6 rounded-xl shadow-lg border-t-4 ${lowStockClass} transition duration-300 hover:shadow-xl`;
@@ -418,9 +447,9 @@
                             <span class="text-base font-normal text-gray-500 ml-2">${currentSite ? '' : 'Total Stock'}</span>
                         </p>
                         <button data-item-id="${itemId}" 
-                            class="add-to-cart-btn px-4 py-2 bg-green-500 text-white font-medium rounded-lg shadow-md hover:bg-green-600 transition duration-150 ${currentSite ? '' : 'opacity-50 cursor-not-allowed'}"
-                            ${currentSite ? '' : 'disabled'}
-                            title="${currentSite ? '' : 'Please select a site first'}"
+                            class="add-to-cart-btn px-4 py-2 bg-red-500 text-white font-medium rounded-lg shadow-md transition duration-150 ${removeDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-600'}"
+                            ${removeDisabled ? 'disabled' : ''}
+                            title="${currentSite ? (stock === 0 ? 'No stock to remove' : 'Remove 1 item') : 'Please select a site first'}"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block -mt-0.5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M3 1a1 1 0 000 2h1.22l.305 1.258A4 4 0 007 9h10a1 1 0 00.815-.44l.947-1.894A1.25 1.25 0 0017 5H7.491c-.34 0-.65.188-.831.493l-1.396 2.546z"/><path d="M5 13a2 2 0 110 4 2 2 0 010-4zm10 0a2 2 0 110 4 2 2 0 010-4z"/></svg>
                             Remove
@@ -432,10 +461,12 @@
             });
             
             document.querySelectorAll('.add-to-cart-btn').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    const itemId = e.currentTarget.dataset.itemId;
-                    addToCart(itemId);
-                });
+                if (!button.disabled) {
+                    button.addEventListener('click', (e) => {
+                        const itemId = e.currentTarget.dataset.itemId;
+                        addToCart(itemId);
+                    });
+                }
             });
         };
 
@@ -522,14 +553,15 @@
 
             transactions.forEach(tx => {
                 const row = document.createElement('tr');
-                const isRemoval = tx.type === 'REMOVAL' || tx.quantity < 0;
+                const isRemoval = tx.type === 'REMOVAL' || tx.quantity < 0 || tx.type.includes('REMOVE');
                 const changeClass = isRemoval ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold';
                 const formattedTime = new Date(tx.timestamp).toLocaleString();
+                const displayQuantity = isRemoval ? `-${tx.quantity}` : (tx.quantity > 0 ? `+${tx.quantity}` : tx.quantity);
 
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formattedTime}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${tx.item}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm ${changeClass}">${tx.type === 'REMOVAL' ? `-${tx.quantity}` : (tx.quantity > 0 ? `+${tx.quantity}` : tx.quantity)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm ${changeClass}">${displayQuantity}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tx.site}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tx.userName || 'Admin'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tx.type}</td>
@@ -545,8 +577,16 @@
                 alertUser("Error", "Please select your operating site first.", "red");
                 return;
             }
-            itemCart[itemId] = (itemCart[itemId] || 0) + 1;
-            updateCartButton();
+            // Check if there is stock to remove
+            const currentStock = stockData[currentSite] ? (stockData[currentSite][itemId] || 0) : 0;
+            const itemsInCart = itemCart[itemId] || 0;
+
+            if (currentStock > itemsInCart) {
+                itemCart[itemId] = (itemCart[itemId] || 0) + 1;
+                updateCartButton();
+            } else {
+                 alertUser("Stock Limit", "You cannot remove more items than are currently in stock at this site.", "yellow");
+            }
         };
 
         const updateCartButton = () => {
@@ -613,11 +653,19 @@
 
                     const newStock = siteDoc.data();
                     const transactionsBatch = [];
+                    let hasStockIssue = false;
 
                     for (const itemId in itemCart) {
-                        const quantity = itemCart[itemId];
+                        const quantityToRemove = itemCart[itemId];
                         const currentQty = newStock[itemId] || 0;
-                        const finalQty = Math.max(0, currentQty - quantity); // Prevent negative stock
+                        
+                        if (currentQty < quantityToRemove) {
+                            hasStockIssue = true;
+                            // Throwing here will roll back the transaction
+                            throw new Error(`Insufficient stock for ${itemId} (Need: ${quantityToRemove}, Have: ${currentQty}).`);
+                        }
+
+                        const finalQty = currentQty - quantityToRemove;
 
                         // Update the stock document
                         newStock[itemId] = finalQty;
@@ -627,12 +675,14 @@
                             timestamp: new Date().toISOString(),
                             site: currentSite,
                             item: itemId,
-                            quantity: quantity,
+                            quantity: quantityToRemove,
                             userName: userName,
                             type: 'REMOVAL',
                             userId: userId,
                         });
                     }
+                    
+                    if (hasStockIssue) return; // Should be caught by the throw, but included for safety
 
                     // Commit the updated stock levels for the site
                     transaction.update(siteDocRef, newStock);
@@ -658,6 +708,20 @@
         // --- 11. ADMIN LOGIC ---
 
         const handleAdminLogin = () => {
+            if (isAdmin) {
+                 // If already logged in, offer to log out/view dashboard
+                const modalContent = `
+                    <h3 class="text-xl font-bold text-gray-700 mb-4">Admin Status</h3>
+                    <p class="text-gray-700 mb-4">You are currently logged in as Administrator. What would you like to do?</p>
+                    <div class="flex justify-end space-x-3">
+                        <button onclick="setAdminMode(false); hideModal();" class="px-4 py-2 bg-gray-500 text-white font-medium rounded-lg hover:bg-gray-600">Switch to Staff View</button>
+                        <button onclick="hideModal();" class="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow-md hover:bg-indigo-700">Continue to Dashboard</button>
+                    </div>
+                `;
+                showModal(modalContent);
+                return;
+            }
+
             const modalContent = `
                 <h3 class="text-2xl font-bold text-indigo-600 mb-4">Admin Login</h3>
                 <p class="text-gray-700 mb-4">Please enter the administrator password.</p>
@@ -710,6 +774,7 @@
                 adminLoginBtn.textContent = 'Admin Login';
                 adminLoginBtn.classList.remove('bg-gray-500', 'cursor-default');
                 adminLoginBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                isAdmin = false;
             }
         };
 
@@ -732,26 +797,7 @@
                 renderAdminSelects();
             }
         };
-
-        const alertUser = (title, message, type) => {
-            const bgColor = type === 'green' ? 'bg-green-100' : (type === 'red' ? 'bg-red-100' : 'bg-yellow-100');
-            const textColor = type === 'green' ? 'text-green-700' : (type === 'red' ? 'text-red-700' : 'text-yellow-700');
-            const headerColor = type === 'green' ? 'text-green-600' : (type === 'red' ? 'text-red-600' : 'text-yellow-600');
-            const buttonColor = type === 'green' ? 'bg-green-600' : (type === 'red' ? 'bg-red-600' : 'bg-yellow-600');
-
-            const modalContent = `
-                <div class="${bgColor} p-4 rounded-lg">
-                    <h3 class="text-xl font-bold ${headerColor} mb-2">${title}</h3>
-                    <p class="${textColor} mb-4">${message}</p>
-                </div>
-                <div class="flex justify-end mt-4">
-                    <button onclick="hideModal()" class="px-4 py-2 ${buttonColor} text-white font-medium rounded-lg hover:opacity-90">Dismiss</button>
-                </div>
-            `;
-            showModal(modalContent);
-        };
-
-
+        
         // --- 12. ADMIN ACTION HANDLERS ---
         
         const handleMassUpdate = async () => {
@@ -773,9 +819,9 @@
             showLoading(true);
 
             try {
-                if (site === 'GLOBAL') {
-                    // GLOBAL update (across all sites)
-                    await Promise.all(SITE_LOCATIONS.map(async (location) => {
+                const sitesToUpdate = site === 'GLOBAL' ? SITE_LOCATIONS : [site];
+                const results = await Promise.all(sitesToUpdate.map(async (location) => {
+                    try {
                         await runTransaction(db, async (transaction) => {
                             const siteDocRef = doc(getStockLevelsRef(), location);
                             const siteDoc = await transaction.get(siteDocRef);
@@ -798,45 +844,32 @@
                             };
                             transaction.set(doc(getTransactionsRef()), tx);
                         });
-                    }));
-                    messageEl.textContent = `Successfully applied change of ${quantity} to ${itemId} across ALL sites.`;
+                        return { success: true, location };
+                    } catch (e) {
+                        console.error(`Update failed for ${location}:`, e);
+                        return { success: false, location, error: e.message };
+                    }
+                }));
 
+                const failedUpdates = results.filter(r => !r.success);
+
+                if (failedUpdates.length === 0) {
+                    messageEl.textContent = `Successfully applied change of ${quantity} to ${itemId} ${site === 'GLOBAL' ? 'across ALL sites.' : `at ${site}.`}`;
+                    messageEl.classList.remove('text-red-600');
+                    messageEl.classList.add('text-green-600');
                 } else {
-                    // SITE-SPECIFIC update
-                    await runTransaction(db, async (transaction) => {
-                        const siteDocRef = doc(getStockLevelsRef(), site);
-                        const siteDoc = await transaction.get(siteDocRef);
-
-                        const currentQty = siteDoc.exists() ? (siteDoc.data()[itemId] || 0) : 0;
-                        const finalQty = Math.max(0, currentQty + quantity);
-                        
-                        // Update stock
-                        transaction.set(siteDocRef, { [itemId]: finalQty }, { merge: true });
-
-                        // Log transaction
-                        const tx = {
-                            timestamp: new Date().toISOString(),
-                            site: site,
-                            item: itemId,
-                            quantity: Math.abs(quantity),
-                            userName: 'System Admin',
-                            type: quantity > 0 ? 'MASS_ADD' : 'MASS_REMOVE',
-                            userId: userId,
-                        };
-                        transaction.set(doc(getTransactionsRef()), tx);
-                    });
-                    messageEl.textContent = `Successfully applied change of ${quantity} to ${itemId} at ${site}.`;
+                    messageEl.textContent = `Update completed with ${failedUpdates.length} error(s). Check console for details.`;
+                    messageEl.classList.remove('text-green-600');
+                    messageEl.classList.add('text-yellow-600');
                 }
                 
-                messageEl.classList.remove('text-red-600');
-                messageEl.classList.add('text-green-600');
                 messageEl.classList.remove('hidden');
                 quantityInput.value = ''; // Clear input
 
             } catch (error) {
-                console.error("Mass update transaction failed: ", error);
-                messageEl.textContent = `Update failed: ${error.message}`;
-                messageEl.classList.remove('text-green-600');
+                console.error("Mass update processing failed: ", error);
+                messageEl.textContent = `Fatal update error: ${error.message}`;
+                messageEl.classList.remove('text-green-600', 'text-yellow-600');
                 messageEl.classList.add('text-red-600');
                 messageEl.classList.remove('hidden');
             } finally {
@@ -988,15 +1021,20 @@
                     await deleteDoc(doc(getItemsRef(), itemId));
 
                     // 2. Remove item field from all site stock documents
-                    await Promise.all(SITE_LOCATIONS.map(async (site) => {
-                        const siteDocRef = doc(getStockLevelsRef(), site);
-                        // Using a simple update with a sentinel value (if supported) 
-                        // or merging the whole document structure, but a transaction is safer.
-                        await updateDoc(siteDocRef, { [itemId]: deleteField() });
-                    }));
-
-                    // 3. (Optional but thorough) Clean up all transactions related to this item.
-                    // This is resource intensive, so we will skip it for this demo.
+                    // Use a transaction here to ensure consistency across updates
+                    const updatePromises = SITE_LOCATIONS.map(site => 
+                        runTransaction(db, async (transaction) => {
+                            const siteDocRef = doc(getStockLevelsRef(), site);
+                            const siteDoc = await transaction.get(siteDocRef);
+                            
+                            if (siteDoc.exists() && siteDoc.data()[itemId] !== undefined) {
+                                const newData = { ...siteDoc.data() };
+                                delete newData[itemId];
+                                transaction.set(siteDocRef, newData);
+                            }
+                        })
+                    );
+                    await Promise.all(updatePromises);
                     
                     messageEl.textContent = `Item "${itemId}" has been successfully deleted from all records.`;
                     messageEl.classList.remove('hidden', 'text-red-600');
@@ -1008,10 +1046,9 @@
                     messageEl.classList.add('text-red-600');
                 } finally {
                     showLoading(false);
-                }
             };
         };
-
+    };
 
         // --- 13. INITIAL SETUP ---
 
@@ -1046,7 +1083,7 @@
             updateCartButton(); // Ensure cart state is reset/loaded
         };
 
-        // Expose hideModal for use by buttons inside modal HTML
+        // Expose hideModal and alertUser for use by buttons inside modal HTML
         window.hideModal = hideModal;
         window.alertUser = alertUser; 
 
