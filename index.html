@@ -20,7 +20,7 @@
             Site Stock Management
         </h1>
 
-        <!-- Loading State / Status Card -->
+        <!-- Loading State / Status Card (Visible by default) -->
         <div id="status-card" class="card text-center bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
             <div id="loader" class="flex justify-center items-center space-x-3">
                 <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-indigo-500"></div>
@@ -167,19 +167,22 @@
             statusMessage.textContent = message;
             loader.classList.remove('hidden');
             mainContent.classList.add('hidden');
-            statusCard.classList.remove('bg-red-200'); // Clear error state
+            statusCard.classList.remove('bg-red-200', 'border-red-400'); // Clear error state
             statusCard.classList.remove('bg-green-200');
         };
 
         const showError = (message) => {
-            statusMessage.textContent = `Error: ${message}`;
+            statusMessage.textContent = `CRITICAL ERROR: ${message}`;
             loader.classList.add('hidden');
-            statusCard.classList.add('bg-red-200');
+            statusCard.classList.remove('bg-gray-50');
+            statusCard.classList.add('bg-red-200', 'border-red-400', 'text-red-700');
+            console.error(`CRITICAL APPLICATION FAILURE: ${message}`);
         };
 
         const showConnected = () => {
-            statusMessage.textContent = 'Database Connected. Loading Live Data...';
-            statusCard.classList.add('bg-green-200');
+            statusMessage.textContent = 'Database Connected. Live Data Stream Active.';
+            statusCard.classList.remove('bg-gray-50');
+            statusCard.classList.add('bg-green-200', 'text-green-800');
             loader.classList.add('hidden');
             mainContent.classList.remove('hidden');
         };
@@ -205,7 +208,7 @@
             const itemIds = Object.keys(itemNames).sort();
 
             if (itemIds.length === 0) {
-                 stockTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No items defined. Check Admin Panel.</td></tr>`;
+                 stockTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No items defined. Check Admin Panel or refresh after a few seconds.</td></tr>`;
                  return;
             }
 
@@ -460,7 +463,11 @@
 
             // Seed Item Definitions
             const itemsSnap = await new Promise(resolve => {
-                onSnapshot(getItemsRef(), resolve, () => resolve(null)); // Resolve immediately for first load check
+                // Attach a one-time listener to get current state (or null if error/unauthorized)
+                const unsubscribe = onSnapshot(getItemsRef(), (snap) => {
+                    unsubscribe(); // Stop listening after first data snapshot
+                    resolve(snap);
+                }, () => resolve({ empty: true })); // Handle error as empty for graceful seed attempt
             });
             
             if (itemsSnap.empty) {
@@ -478,16 +485,20 @@
                 console.log("Default items seeded.");
             }
             
-            // Re-run batch for stock levels (can't rely on itemNames being set yet)
+            // Re-run batch for stock levels
             const stockBatch = writeBatch(db);
             let stockNeedsCommit = false;
             
             const stockSnap = await new Promise(resolve => {
-                onSnapshot(getStockLevelsRef(), resolve, () => resolve(null));
+                const unsubscribe = onSnapshot(getStockLevelsRef(), (snap) => {
+                    unsubscribe();
+                    resolve(snap);
+                }, () => resolve({ empty: true }));
             });
 
             if (stockSnap.empty) {
                  console.log("Seeding initial stock levels...");
+                 // Use items from the snap if available, otherwise fall back to our hardcoded defaults
                  const currentItems = itemsSnap.empty ? DEFAULT_ITEMS : itemsSnap.docs.map(d => ({id: d.id}));
 
                  currentItems.forEach(item => {
@@ -547,7 +558,8 @@
         };
 
         window.deleteItem = async (itemId) => {
-            if (!confirm(`Are you sure you want to delete ${itemNames[itemId].name}? This will remove all stock history too!`)) return;
+            // Note: Using console.warn instead of confirm() for non-blocking UI
+            console.warn(`Attempting to delete ${itemNames[itemId].name}. (If this were a real application, a modal confirmation would appear here)`);
 
             try {
                 // Delete Item Definition
@@ -608,13 +620,20 @@
         async function setupFirebase() {
             showLoading("Initializing Firebase...");
             try {
-                // 1. Get mandatory global variables provided by the platform
-                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                // 1. Get mandatory global variables provided by the platform (with robust checks)
+                appId = typeof __app_id !== 'undefined' && __app_id ? __app_id : 'default-app-id';
+                let configString = typeof __firebase_config !== 'undefined' && __firebase_config ? __firebase_config : '{}';
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' && __initialAuthToken ? __initial_auth_token : null;
+                
+                let firebaseConfig;
+                try {
+                    firebaseConfig = JSON.parse(configString);
+                } catch (e) {
+                    throw new Error(`Could not parse Firebase configuration string. Raw: ${configString}`);
+                }
 
                 if (!firebaseConfig || !firebaseConfig.apiKey) {
-                    throw new Error("Platform Firebase configuration is missing or invalid.");
+                    throw new Error("Platform Firebase configuration is missing or invalid API Key.");
                 }
 
                 // 2. Initialize App and Services
@@ -624,38 +643,44 @@
                 
                 // 3. Authentication using the MANDATORY custom token or anonymous fallback
                 showLoading("Authenticating User...");
+                
+                let user;
                 if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
+                    const credentials = await signInWithCustomToken(auth, initialAuthToken);
+                    user = credentials.user;
                 } else {
-                    await signInAnonymously(auth);
+                    const credentials = await signInAnonymously(auth);
+                    user = credentials.user;
                 }
 
-                // 4. Set up Auth State Listener (Crucial for getting the final userId and starting data listeners)
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        userId = user.uid; 
-                        isAuthReady = true;
-                        userIdDisplay.querySelector('span').textContent = userId;
-                        userIdDisplay.classList.remove('hidden');
+                // 4. Update state and start data stream
+                if (user) {
+                    userId = user.uid; 
+                    isAuthReady = true;
+                    userIdDisplay.querySelector('span').textContent = userId;
+                    userIdDisplay.classList.remove('hidden');
 
-                        showLoading("Seeding default data...");
-                        await seedInitialData();
+                    showLoading("Seeding default data...");
+                    // Seed initial data if the collections are empty
+                    await seedInitialData();
 
-                        showLoading("Setting up real-time listeners...");
-                        setupItemsListener();
-                        setupStockLevelsListener();
-                        
-                        showConnected();
-                        renderSiteSelect();
+                    showLoading("Setting up real-time listeners...");
+                    // Start listening for real-time updates
+                    setupItemsListener();
+                    setupStockLevelsListener();
+                    
+                    showConnected();
 
-                    } else {
-                        showError('Authentication Failed: User not logged in.');
-                    }
-                });
+                    // Initial UI Render
+                    renderSiteSelect();
+
+                } else {
+                    throw new Error('Authentication Failed: Could not get user credential.');
+                }
 
             } catch (error) {
-                console.error("Firebase Initialization Error:", error);
-                showError(`Failed to connect or authenticate: ${error.message}. Please ensure Firebase is set up correctly.`);
+                // If any part of the setup fails, show a prominent error message
+                showError(`Setup Failed: ${error.message}. Please check your browser console for details.`);
             }
         }
 
