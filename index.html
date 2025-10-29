@@ -1,62 +1,113 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitchell & Murdoch Stock Control</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'violet-700': '#6D28D9',
-                        'violet-800': '#5B21AA',
-                        'teal-600': '#0D9488',
-                        'teal-700': '#0F766E',
-                    },
-                },
-            }
-        }
-    </script>
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="module">
-        // Importing modules for the Firebase services used in the React component
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, collection, query, writeBatch, runTransaction, getDocs, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Expose Firebase functions globally for the React component to use
-        window.firebase = {
-            initializeApp,
-            getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
-            getFirestore, doc, onSnapshot, collection, query, writeBatch, runTransaction, getDocs, setDoc, deleteDoc
-        };
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mitchell & Murdoch Stock Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
 
-        // This is a dummy setup for local testing. The actual environment will provide these variables.
-        if (typeof window.__firebase_config === 'undefined') {
-            console.warn("Using placeholder Firebase config. App may not function correctly without a real configuration.");
-            window.__firebase_config = JSON.stringify({
-  apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
-  authDomain: "mmstock-8bcdf.firebaseapp.com",
-  projectId: "mmstock-8bcdf",
-  storageBucket: "mmstock-8bcdf.firebasestorage.app",
-  messagingSenderId: "935228101629",
-  appId: "1:935228101629:web:766421e0da43becc323f94",
-  measurementId: "G-NWJ4Z7ZHT8"
-}); // CORRECTED: This now properly closes the JSON object and the JSON.stringify function call.
-        }
-        if (typeof window.__initial_auth_token === 'undefined') {
-            console.warn("Using placeholder auth token.");
-            window.__initial_auth_token = null; // No token for local placeholder
-        }
-        if (typeof window.__app_id === 'undefined') {
-            window.__app_id = 'mitchell-murdoch-stock-local';
-        }
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'violet-700': '#6D28D9',
+            'violet-800': '#5B21AA',
+            'teal-600': '#0D9488',
+            'teal-700': '#0F766E',
+          },
+        },
+      },
+    };
+  </script>
 
-    </script>
+  <!-- ✅ Use ES Modules for Firebase and React together -->
+  <script type="module">
+    // --- Import all dependencies ---
+    import React from "https://unpkg.com/react@18/umd/react.development.js";
+    import ReactDOM from "https://unpkg.com/react-dom@18/umd/react-dom.development.js";
+    import * as Babel from "https://unpkg.com/@babel/standalone/babel.min.js";
+
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import {
+      getAuth,
+      signInAnonymously,
+      signInWithCustomToken,
+      onAuthStateChanged,
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import {
+      getFirestore,
+      doc,
+      onSnapshot,
+      collection,
+      query,
+      writeBatch,
+      runTransaction,
+      getDocs,
+      setDoc,
+      deleteDoc,
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // --- Global Exports ---
+    window.firebase = {
+      initializeApp,
+      getAuth,
+      signInAnonymously,
+      signInWithCustomToken,
+      onAuthStateChanged,
+      getFirestore,
+      doc,
+      onSnapshot,
+      collection,
+      query,
+      writeBatch,
+      runTransaction,
+      getDocs,
+      setDoc,
+      deleteDoc,
+    };
+
+    // --- Dummy Config for local testing ---
+    if (typeof window.__firebase_config === "undefined") {
+      console.warn("Using placeholder Firebase config. App may not function correctly.");
+      window.__firebase_config = JSON.stringify({
+        apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
+        authDomain: "mmstock-8bcdf.firebaseapp.com",
+        projectId: "mmstock-8bcdf",
+        storageBucket: "mmstock-8bcdf.firebasestorage.app",
+        messagingSenderId: "935228101629",
+        appId: "1:935228101629:web:766421e0da43becc323f94",
+        measurementId: "G-NWJ4Z7ZHT8",
+      });
+    }
+
+    if (typeof window.__initial_auth_token === "undefined") {
+      console.warn("Using placeholder auth token.");
+      window.__initial_auth_token = null;
+    }
+
+    if (typeof window.__app_id === "undefined") {
+      window.__app_id = "mitchell-murdoch-stock-local";
+    }
+
+    // --- ✅ Wait until page fully loads, then run the React app ---
+    window.addEventListener("DOMContentLoaded", async () => {
+      const root = document.getElementById("root");
+      if (!window.firebase) {
+        root.innerHTML = "<h2 style='color:red;text-align:center'>Firebase failed to load.</h2>";
+        return;
+      }
+
+      // Now safely start your React/Babel app
+      const script = document.createElement("script");
+      script.setAttribute("type", "text/babel");
+      script.setAttribute("data-type", "module");
+      script.textContent = `
+        // Your existing React code goes here (starting from const { useState, useEffect } = React;)
+      `;
+      document.body.appendChild(script);
+    });
+  </script>
 </head>
 <body>
     <div id="root"></div>
