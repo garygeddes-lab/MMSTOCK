@@ -110,11 +110,9 @@
 
         // --- 1. USER'S APP CONFIGURATION & GLOBAL STATE ---
         
-        // Configuration fallback. We explicitly set apiKey to an empty string to prevent the Firebase SDK 
-        // from substituting a failing dummy key internally during the initializeApp call.
+        // Configuration fallback. We use a MINIMAL configuration to prevent the Firebase SDK 
+        // from initializing Authentication, which is causing the 400 error.
         const LIVE_FIREBASE_CONFIG_FALLBACK = {
-            apiKey: "", 
-            authDomain: "fallback-domain.firebaseapp.com",
             projectId: "mmstock-fallback",
         };
         
@@ -639,9 +637,9 @@
                 if (configString) {
                     try {
                         firebaseConfig = JSON.parse(configString);
-                        if (!firebaseConfig || !firebaseConfig.apiKey) {
-                            // If it parses but the key is missing, treat it as invalid and fall back.
-                            throw new Error("Missing API Key after parse.");
+                        if (!firebaseConfig || !firebaseConfig.projectId) {
+                            // If it parses but the Project ID is missing, fall back.
+                            throw new Error("Missing Project ID after parse.");
                         }
                     } catch (e) {
                         isFallback = true;
