@@ -436,7 +436,7 @@
                 console.log("Items updated:", items);
             }, (error) => console.error("Error fetching items:", error));
 
-            // 3. Stock Levels Listener (Public Data) - FIXED PATH to 5 segments
+            // 3. Stock Levels Listener (Public Data) - Correct 5-segment path
             const stockLevelsColRef = collection(db, `/artifacts/${appId}/public/data/stock_levels`);
             onSnapshot(stockLevelsColRef, (snapshot) => {
                 stockLevels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -606,14 +606,13 @@
             let success = true;
             
             try {
-                // Use a transaction to ensure atomicity
+                // Use a transaction (runTransaction) to ensure atomicity and consistency
                 await runTransaction(db, async (t) => {
-                    const batch = writeBatch(db);
                     
                     for (const [itemId, quantityRemoved] of itemsToUpdate) {
                         const itemName = items.find(i => i.id === itemId)?.name;
                         
-                        // 1. Update Stock Level (Public Collection) - Correct 5-segment path
+                        // 1. Get Stock Level (READ)
                         const stockDocId = `${locationId}_${itemId}`;
                         const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
                         
@@ -623,18 +622,21 @@
                         const newQuantity = currentQuantity - quantityRemoved;
                         
                         if (newQuantity < 0) {
+                            // Throwing an error here automatically rolls back the transaction
                             throw new Error(`Insufficient stock for ${itemName}. Only ${currentQuantity} available.`);
                         }
                         
-                        batch.set(stockRef, { 
+                        // 2. Update Stock Level (WRITE using transaction object t)
+                        t.set(stockRef, { 
                             locationId, 
                             itemId, 
                             quantity: newQuantity 
                         }, { merge: true });
 
-                        // 2. Record Transaction (Private Collection)
+                        // 3. Record Transaction (WRITE using transaction object t)
+                        // Use a new document reference in the private collection
                         const transactionRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
-                        batch.set(transactionRef, {
+                        t.set(transactionRef, {
                             type: 'removal',
                             staffName: staffName,
                             location: locName,
@@ -644,13 +646,15 @@
                             timestamp: Timestamp.now()
                         });
                     }
-                    await batch.commit();
+                    // The transaction automatically commits all t.set/t.update operations here
                 });
                 
             } catch (error) {
                 success = false;
                 console.error("Transaction failed: ", error);
-                showMessageModal("Transaction Failed", error.message || "An unexpected error occurred during stock removal.");
+                // Check if it's the specific stock error we threw
+                const errorMessage = error.message.includes("Insufficient stock") ? error.message : "An unexpected database error occurred during stock removal. Please try again.";
+                showMessageModal("Transaction Failed", errorMessage);
             }
 
             if (success) {
