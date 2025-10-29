@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mitchell & Murdoch Stock Control</title>
-    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Configure Tailwind to recognize custom colors -->
     <script>
         tailwind.config = {
             theme: {
@@ -21,11 +19,9 @@
             }
         }
     </script>
-    <!-- Load React and Babel -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Load Firebase SDKs -->
     <script type="module">
         // Importing modules for the Firebase services used in the React component
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -50,8 +46,7 @@
   messagingSenderId: "935228101629",
   appId: "1:935228101629:web:766421e0da43becc323f94",
   measurementId: "G-NWJ4Z7ZHT8"
-};
-            });
+}); // CORRECTED: This now properly closes the JSON object and the JSON.stringify function call.
         }
         if (typeof window.__initial_auth_token === 'undefined') {
             console.warn("Using placeholder auth token.");
