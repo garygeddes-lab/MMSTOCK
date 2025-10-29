@@ -110,9 +110,10 @@
 
         // --- 1. USER'S APP CONFIGURATION & GLOBAL STATE ---
         
-        // Configuration fallback. We intentionally omit 'apiKey' to prevent the Auth SDK from failing 
-        // when attempting to connect with an invalid key during initialization.
+        // Configuration fallback. We explicitly set apiKey to an empty string to prevent the Firebase SDK 
+        // from substituting a failing dummy key internally during the initializeApp call.
         const LIVE_FIREBASE_CONFIG_FALLBACK = {
+            apiKey: "", 
             authDomain: "fallback-domain.firebaseapp.com",
             projectId: "mmstock-fallback",
         };
@@ -639,7 +640,7 @@
                     try {
                         firebaseConfig = JSON.parse(configString);
                         if (!firebaseConfig || !firebaseConfig.apiKey) {
-                            // Even if it parses, if the key is missing, treat it as invalid.
+                            // If it parses but the key is missing, treat it as invalid and fall back.
                             throw new Error("Missing API Key after parse.");
                         }
                     } catch (e) {
