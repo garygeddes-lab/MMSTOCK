@@ -109,14 +109,6 @@
 
         // --- 1. USER'S APP CONFIGURATION & GLOBAL STATE ---
         
-        // Configuration reference used only if platform variables fail completely (as a fallback)
-        const LIVE_FIREBASE_CONFIG_FALLBACK = {
-             // This is a known-good (but possibly not the user's) config structure to prevent runtime crash
-            apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE", 
-            authDomain: "mmstock-8bcdf.firebaseapp.com",
-            projectId: "mmstock-8bcdf",
-        };
-        
         // --- ADMIN CONFIGURATION ---
         const ADMIN_PASSWORD = 'admin'; // Hardcoded password for quick access
         const SITE_LOCATIONS = ['Dundee', 'Perth', 'Fife', 'Aberdeen', 'Glasgow'];
@@ -618,17 +610,26 @@
             }
         };
 
-        // --- 10. CORE FIREBASE SETUP (FIXED LOGIC) ---
+        // --- 10. CORE FIREBASE SETUP (DEBUG LOGIC) ---
         async function setupFirebase() {
             showLoading("Initializing Firebase...");
             let firebaseConfig;
 
             try {
                 // 1. Get mandatory global variables provided by the platform (with robust checks)
+                // Use default-app-id if __app_id is missing or invalid.
                 appId = typeof __app_id === 'string' && __app_id.length > 0 ? __app_id : 'default-app-id';
+
+                // Check for config string and token
                 let configString = typeof __firebase_config === 'string' && __firebase_config.length > 0 ? __firebase_config : null;
                 const initialAuthToken = typeof __initial_auth_token === 'string' && __initial_auth_token.length > 0 ? __initial_auth_token : null;
                 
+                // --- CRITICAL DEBUGGING LOGS ---
+                console.log(`[DEBUG] __app_id: ${appId}`);
+                console.log(`[DEBUG] __firebase_config (raw string): ${configString ? configString.substring(0, 80) + '...' : 'null or empty string'}`);
+                console.log(`[DEBUG] __initial_auth_token present: ${!!initialAuthToken}`);
+                // -------------------------------
+
                 // If the config string is missing, throw an error, preventing silent failures.
                 if (!configString) {
                      throw new Error("Mandatory platform variable __firebase_config is missing or empty.");
@@ -638,11 +639,11 @@
                 try {
                     firebaseConfig = JSON.parse(configString);
                 } catch (e) {
-                    throw new Error(`Could not parse Firebase configuration string: ${e.message}`);
+                    throw new Error(`Could not parse Firebase configuration string: ${e.message}. Raw string logged above.`);
                 }
 
                 if (!firebaseConfig || !firebaseConfig.apiKey) {
-                    throw new Error("Parsed Firebase configuration is missing or invalid API Key.");
+                    throw new Error("Parsed Firebase configuration is missing or invalid API Key. Check the JSON structure.");
                 }
 
                 // 2. Initialize App and Services
@@ -689,7 +690,7 @@
 
             } catch (error) {
                 // If any part of the setup fails, show a prominent error message
-                showError(`Setup Failed: ${error.message}. Please check your browser console for details.`);
+                showError(`Setup Failed: ${error.message}.`);
             }
         }
 
