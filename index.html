@@ -127,11 +127,11 @@
 
     <!-- Firebase SDKs -->
     <script type="module">
-        // --- CLEANED IMPORTS ---
+        // --- CORRECTED IMPORTS: setLogLevel is removed as it's not exported here. ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, collection, writeBatch, runTransaction, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // --- END CLEANED IMPORTS ---
+        // --- END CORRECTED IMPORTS ---
         
         // Global state for application
         let firebaseApp, db, auth, userId = null;
@@ -147,7 +147,18 @@
 
         // --- Core Firebase Setup & Global Elements ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        
+        let firebaseConfig = null;
+        const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+        if (rawConfig) {
+            try {
+                firebaseConfig = JSON.parse(rawConfig);
+            } catch (e) {
+                console.error("Failed to parse __firebase_config string:", e);
+                // firebaseConfig remains null, triggering the error path below
+            }
+        }
+
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         const authStatusEl = document.getElementById('auth-status');
@@ -218,8 +229,8 @@
 
         // --- Initialization ---
         async function initializeFirebase() {
-            if (!firebaseConfig) {
-                authStatusEl.textContent = 'Firebase Config Missing. Using Anonymous Fallback.';
+            if (!firebaseConfig) { // This is where the error occurs if config is missing.
+                authStatusEl.textContent = 'Firebase Config Missing. Cannot connect to database.';
                 displayError("Firebase configuration is missing. Cannot initialize Firestore.");
                 return;
             }
@@ -687,7 +698,6 @@
             try {
                 await runTransaction(db, async (transaction) => {
                     // 1. Delete Item Definition
-                    // Note: deleteDoc is not used in a transaction; transaction.delete must be used.
                     transaction.delete(itemDefRef); 
 
                     // 2. Remove Item from Stock Levels across all sites
