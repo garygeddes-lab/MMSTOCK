@@ -1622,6 +1622,9 @@
         initializeFirebase();
     </script>
 
+
+
+
 <script>
 (function(){
   const qs = s => document.querySelector(s);
@@ -1663,6 +1666,16 @@
     } else {
       if(err) err.classList.remove('hidden');
     }
+  };
+
+  /* -------------------- Admin Logout -------------------- */
+  window.adminLogout = function(){
+    const adminPanel = qs('#admin-panel');
+    const staffView = qs('#staff-view');
+    const summaryCard = qs('#summary-card');
+    if(adminPanel) adminPanel.classList.add('hidden');
+    if(staffView) staffView.classList.remove('hidden');
+    if(summaryCard) summaryCard.classList.remove('hidden');
   };
 
   /* -------------------- Apply Filters (Transaction Log) -------------------- */
@@ -1714,9 +1727,18 @@
     qs('#checkout-modal')?.classList.remove('hidden');
   };
 
-  /* -------------------- Prevent Settings Removal Conflicts -------------------- */
-  window.confirmRemoveItem = window.confirmRemoveItem || function(){};
-  window.confirmRemoveLocation = window.confirmRemoveLocation || function(){};
+  /* -------------------- Expose Add Item / Location -------------------- */
+  if(typeof window.addItem !== 'function'){
+    window.addItem = async function(){
+      alert('Add Item clicked — ensure Firebase addItem() logic runs here.');
+    };
+  }
+
+  if(typeof window.addLocation !== 'function'){
+    window.addLocation = async function(){
+      alert('Add Location clicked — ensure Firebase addLocation() logic runs here.');
+    };
+  }
 
 })();
 </script>
