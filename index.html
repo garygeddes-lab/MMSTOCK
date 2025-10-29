@@ -138,7 +138,8 @@
                                 <option value="">Filter by Location</option>
                                 <!-- Options populated by JS -->
                             </select>
-                            <input type="date" id="log-filter-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
+                            <input type="date" id="log-filter-start-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="Start Date">
+<input type="date" id="log-filter-end-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple" placeholder="End Date">
                             <button onclick="applyLogFilters()" class="py-2 px-4 bg-primary-purple text-white rounded-lg hover:bg-primary-purple/90 transition duration-150">Apply Filters</button>
                             <button onclick="exportLog()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Download Log (CSV)</button>
                         </div>
@@ -688,8 +689,24 @@
 
         /** Opens the checkout modal */
         window.openCheckoutModal = () => {
-            document.getElementById('checkout-modal').classList.remove('hidden');
-        };
+    const cartItems = Object.entries(removalCart)
+        .filter(([, qty]) => qty > 0)
+        .map(([itemId, qty]) => ({
+            itemName: items.find(i => i.id === itemId)?.name || 'Unknown Item',
+            qty
+        }));
+
+    const listContainer = document.getElementById('checkout-cart-list');
+    if (cartItems.length === 0) {
+        listContainer.innerHTML = '<li class="text-gray-500 italic">No items selected for removal.</li>';
+    } else {
+        listContainer.innerHTML = cartItems.map(item =>
+            `<li>${item.itemName} — <strong>${item.qty}</strong></li>`
+        ).join('');
+    }
+
+    document.getElementById('checkout-modal').classList.remove('hidden');
+};
 
         /** Closes the checkout modal */
         window.closeCheckoutModal = () => {
@@ -1021,24 +1038,27 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
 };
 
         window.applyLogFilters = () => {
-            const staffFilter = document.getElementById('log-filter-staff').value.toLowerCase();
-            const locationFilter = document.getElementById('log-filter-location').value;
-            const dateFilter = document.getElementById('log-filter-date').value;
+    const staffFilter = document.getElementById('log-filter-staff').value.toLowerCase();
+    const locationFilter = document.getElementById('log-filter-location').value;
+    const startDateFilter = document.getElementById('log-filter-start-date').value;
+    const endDateFilter = document.getElementById('log-filter-end-date').value;
 
-            const filtered = transactions.filter(t => {
-                const staffMatch = staffFilter ? (t.staffName || '').toLowerCase().includes(staffFilter) : true;
-                const locationMatch = locationFilter ? t.location === locationFilter : true;
-                
-                let dateMatch = true;
-                if (dateFilter && t.timestamp) {
-                    const transactionDate = new Date(t.timestamp.seconds * 1000).toISOString().split('T')[0];
-                    dateMatch = transactionDate === dateFilter;
-                }
+    const filtered = transactions.filter(t => {
+        const staffMatch = staffFilter ? (t.staffName || '').toLowerCase().includes(staffFilter) : true;
+        const locationMatch = locationFilter ? t.location === locationFilter : true;
+        let dateMatch = true;
 
-                return staffMatch && locationMatch && dateMatch;
-            });
+        if ((startDateFilter || endDateFilter) && t.timestamp) {
+            const transactionDate = new Date(t.timestamp.seconds * 1000);
+            const startDate = startDateFilter ? new Date(startDateFilter) : new Date(0);
+            const endDate = endDateFilter ? new Date(endDateFilter) : new Date();
+            dateMatch = transactionDate >= startDate && transactionDate <= new Date(endDate.getTime() + 86400000 - 1);
+        }
+        return staffMatch && locationMatch && dateMatch;
+    });
 
-            renderTransactionLog(filtered);
+    renderTransactionLog(filtered);
+};
         };
         
         /** Exports the currently visible transaction log to CSV */
