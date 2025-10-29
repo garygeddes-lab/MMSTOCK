@@ -1631,110 +1631,185 @@
 </div>
 
 
+
+
+
+<!-- Admin-only confirm modals (separate from staff removal) -->
+<div id="admin-confirm-item-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm m-4 text-center">
+    <h3 class="text-2xl font-bold mb-4 text-primary-purple">Confirm Delete</h3>
+    <p class="text-gray-700 mb-6">Are you sure you want to delete this <strong>stock item</strong>?</p>
+    <div class="flex justify-center gap-4">
+      <button id="admin-confirm-item-delete" class="px-5 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">Delete</button>
+      <button onclick="document.getElementById('admin-confirm-item-modal').classList.add('hidden')" class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="admin-confirm-location-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm m-4 text-center">
+    <h3 class="text-2xl font-bold mb-4 text-primary-purple">Confirm Delete</h3>
+    <p class="text-gray-700 mb-6">Are you sure you want to delete this <strong>location</strong>?</p>
+    <div class="flex justify-center gap-4">
+      <button id="admin-confirm-location-delete" class="px-5 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">Delete</button>
+      <button onclick="document.getElementById('admin-confirm-location-modal').classList.add('hidden')" class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Cancel</button>
+    </div>
+  </div>
+</div>
+
+
 <script>
 (function(){
   const qs = s => document.querySelector(s);
   const qsa = s => Array.from(document.querySelectorAll(s));
 
-  /* -------------------- ADMIN: capture delete targets -------------------- */
-  document.addEventListener('click', e => {
-    if(e.target.matches('.delete-item-btn')){
-      window.selectedItemId = e.target.dataset.itemId;
-      document.getElementById('admin-confirm-item-modal')?.classList.remove('hidden');
-    }
-    if(e.target.matches('.delete-location-btn')){
-      window.selectedLocationId = e.target.dataset.locationId;
-      document.getElementById('admin-confirm-location-modal')?.classList.remove('hidden');
-    }
-  });
+  // Keep track of admin selection from table clicks
+  window.selectedItemId = null;
+  window.selectedLocationId = null;
 
-  /* -------------------- ADMIN: confirm deletions -------------------- */
-  window.confirmRemoveItemAdmin = async function(){
-    try {
-      if(!window.selectedItemId) return alert('No item selected.');
-      await deleteDoc(doc(db, "items", window.selectedItemId));
-      showMessageModal("Success", "Item deleted successfully.");
-      document.getElementById('admin-confirm-item-modal')?.classList.add('hidden');
-      window.selectedItemId = null;
-    } catch(err){
-      console.error("Error deleting item:", err);
-      showMessageModal("Error", "Failed to delete item: " + err.message);
+  // Intercept clicks on Admin Settings tables:
+  document.addEventListener('click', (e) => {
+    const adminPanel = qs('#admin-panel');
+    if (!adminPanel || adminPanel.classList.contains('hidden')) return;
+
+    // Item delete buttons: prefer data-item-id; otherwise look up closest row with data-id
+    if (e.target.closest('.delete-item-btn')) {
+      const btn = e.target.closest('.delete-item-btn');
+      const id = btn.dataset.itemId || btn.getAttribute('data-id') || btn.closest('[data-item-id]')?.dataset.itemId || btn.closest('tr')?.getAttribute('data-id');
+      window.selectedItemId = id || null;
+      // Open admin-specific modal
+      const m = qs('#admin-confirm-item-modal');
+      if (m) m.classList.remove('hidden');
+      e.stopPropagation();
+      e.preventDefault();
+      return false;
+    }
+
+    // Location delete buttons
+    if (e.target.closest('.delete-location-btn')) {
+      const btn = e.target.closest('.delete-location-btn');
+      const id = btn.dataset.locationId || btn.getAttribute('data-id') || btn.closest('[data-location-id]')?.dataset.locationId || btn.closest('tr')?.getAttribute('data-id');
+      window.selectedLocationId = id || null;
+      const m = qs('#admin-confirm-location-modal');
+      if (m) m.classList.remove('hidden');
+      e.stopPropagation();
+      e.preventDefault();
+      return false;
+    }
+  }, true);
+
+  // Bind confirm delete buttons to Firestore deletes (admin-only)
+  const bindAdminDeletes = () => {
+    const itemBtn = qs('#admin-confirm-item-delete');
+    const locBtn = qs('#admin-confirm-location-delete');
+    if (itemBtn && !itemBtn.dataset.bound) {
+      itemBtn.addEventListener('click', async () => {
+        try {
+          if (!window.selectedItemId) return alert('No item selected.');
+          await deleteDoc(doc(db, "items", window.selectedItemId));
+          showMessageModal("Success", "Item deleted successfully.");
+          qs('#admin-confirm-item-modal')?.classList.add('hidden');
+          window.selectedItemId = null;
+        } catch (err) {
+          console.error(err);
+          showMessageModal("Error", "Failed to delete item: " + (err?.message || err));
+        }
+      });
+      itemBtn.dataset.bound = "1";
+    }
+    if (locBtn && !locBtn.dataset.bound) {
+      locBtn.addEventListener('click', async () => {
+        try {
+          if (!window.selectedLocationId) return alert('No location selected.');
+          await deleteDoc(doc(db, "locations", window.selectedLocationId));
+          showMessageModal("Success", "Location deleted successfully.");
+          qs('#admin-confirm-location-modal')?.classList.add('hidden');
+          window.selectedLocationId = null;
+        } catch (err) {
+          console.error(err);
+          showMessageModal("Error", "Failed to delete location: " + (err?.message || err));
+        }
+      });
+      locBtn.dataset.bound = "1";
     }
   };
+  bindAdminDeletes();
+  document.addEventListener('DOMContentLoaded', bindAdminDeletes);
 
-  window.confirmRemoveLocationAdmin = async function(){
-    try {
-      if(!window.selectedLocationId) return alert('No location selected.');
-      await deleteDoc(doc(db, "locations", window.selectedLocationId));
-      showMessageModal("Success", "Location deleted successfully.");
-      document.getElementById('admin-confirm-location-modal')?.classList.add('hidden');
-      window.selectedLocationId = null;
-    } catch(err){
-      console.error("Error deleting location:", err);
-      showMessageModal("Error", "Failed to delete location: " + err.message);
-    }
-  };
+  // Override global confirmRemoval ONLY when staff panel is visible
+  if (typeof window.confirmRemoval === 'function') {
+    const staffConfirm = window.confirmRemoval;
+    window.confirmRemoval = function () {
+      const staffView = qs('#staff-view');
+      if (staffView && !staffView.classList.contains('hidden')) {
+        return staffConfirm();
+      }
+      // If admin panel is visible, ignore staff flow
+      return false;
+    };
+  }
 
-  /* -------------------- STAFF: show stock to remove summary -------------------- */
-  window.showConfirmRemovalModal = function(){
-    // Only run if staff panel visible
-    const staffView = document.getElementById('staff-view');
-    if(!staffView || staffView.classList.contains('hidden')) return;
-    const listContainer = document.getElementById('confirm-remove-list');
-    if(!listContainer) return;
-    const cartItems = Object.entries(window.removalCart||{}).filter(([id,qty])=>qty>0);
-    if(cartItems.length===0){
-      listContainer.innerHTML='<li class="text-gray-500 italic">No items selected for removal.</li>';
-    } else {
-      listContainer.innerHTML = cartItems.map(([id,qty])=>{
-        const itemName = (window.items?.find(i=>i.id===id)?.name)||'Unknown Item';
-        return `<li>${itemName} — <strong>${qty}</strong></li>`;
-      }).join('');
-    }
-    document.getElementById('confirm-remove-modal')?.classList.remove('hidden');
-  };
-
-  /* -------------------- FILTERS: ensure button calls correct function -------------------- */
-  window.applyLogFilters = function(){
-    if(!window.transactions || !Array.isArray(window.transactions)){
+  // Ensure Apply Filters button binds to the global handler
+  window.applyLogFilters = function () {
+    if (!window.transactions || !Array.isArray(window.transactions)) {
       console.warn('No transactions loaded');
       return;
     }
-    const staff = (qs('#log-filter-staff')?.value||'').toLowerCase();
-    const loc = qs('#log-filter-location')?.value||'';
-    const s = qs('#log-filter-start-date')?.value||'';
-    const e = qs('#log-filter-end-date')?.value||'';
-    const filtered = window.transactions.filter(t=>{
-      const sm = staff ? (t.staffName||'').toLowerCase().includes(staff) : true;
-      const lm = loc ? t.location===loc : true;
-      let dm = true;
-      if((s||e)&&t.timestamp){
-        const d=new Date(t.timestamp.seconds*1000);
-        const sd=s?new Date(s):new Date(0);
-        const ed=e?new Date(e):new Date();
-        const einc=new Date(ed.getTime()+86400000-1);
-        dm=d>=sd&&d<=einc;
-      }
-      return sm&&lm&&dm;
-    });
-    if(window.renderTransactionLog) window.renderTransactionLog(filtered);
-    else console.warn('renderTransactionLog() not found');
-  };
+    const staff = (qs('#log-filter-staff')?.value || '').toLowerCase();
+    const loc = qs('#log-filter-location')?.value || '';
+    const s = qs('#log-filter-start-date')?.value || '';
+    const e = qs('#log-filter-end-date')?.value || '';
 
-  window.addEventListener('DOMContentLoaded', ()=>{
-    const btn = document.querySelector('#apply-filters-btn');
-    if(btn) btn.onclick = ()=>window.applyLogFilters();
+    const filtered = window.transactions.filter(t => {
+      const sm = staff ? (t.staffName || '').toLowerCase().includes(staff) : true;
+      const lm = loc ? t.location === loc : true;
+      let dm = true;
+      if ((s || e) && t.timestamp) {
+        const d = new Date(t.timestamp.seconds * 1000);
+        const sd = s ? new Date(s) : new Date(0);
+        const ed = e ? new Date(e) : new Date();
+        const einc = new Date(ed.getTime() + 86400000 - 1);
+        dm = d >= sd && d <= einc;
+      }
+      return sm && lm && dm;
+    });
+    if (window.renderTransactionLog) window.renderTransactionLog(filtered);
+  };
+  const filtersBtn = qs('#apply-filters-btn');
+  if (filtersBtn) filtersBtn.onclick = () => window.applyLogFilters();
+  document.addEventListener('DOMContentLoaded', () => {
+    const b = qs('#apply-filters-btn');
+    if (b) b.onclick = () => window.applyLogFilters();
   });
 
-  /* -------------------- GENERIC: show message modal -------------------- */
-  window.showMessageModal = function(title, message){
-    const modal = document.getElementById('message-modal');
-    if(!modal) return alert(title + ": " + message);
-    document.getElementById('message-title').textContent = title;
-    document.getElementById('message-text').textContent = message;
-    modal.classList.remove('hidden');
+  // Populate Items To Remove list right before staff confirmation
+  window.showConfirmRemovalModal = function () {
+    const staffView = qs('#staff-view');
+    if (!staffView || staffView.classList.contains('hidden')) return; // only for staff screen
+    const list = qs('#confirm-remove-list');
+    const cart = window.removalCart || {};
+    if (list) {
+      const entries = Object.entries(cart).filter(([id, q]) => q > 0);
+      list.innerHTML = entries.length
+        ? entries.map(([id, q]) => {
+            const name = (window.items?.find(i => i.id === id)?.name) || 'Unknown Item';
+            return `<li>${name} — <strong>${q}</strong></li>`;
+          }).join('')
+        : '<li class="text-gray-500 italic">No items selected for removal.</li>';
+    }
+    qs('#confirm-remove-modal')?.classList.remove('hidden');
   };
 
+  // Provide a generic showMessageModal if missing
+  if (typeof window.showMessageModal !== 'function') {
+    window.showMessageModal = function (title, message) {
+      const m = qs('#message-modal');
+      if (!m) return alert((title ? title + ': ' : '') + message);
+      qs('#message-title').textContent = title || 'Info';
+      qs('#message-text').textContent = message || '';
+      m.classList.remove('hidden');
+    };
+  }
 })();
 </script>
 
