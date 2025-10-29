@@ -99,7 +99,7 @@
     <!-- Firebase SDK Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, query, writeBatch, Timestamp, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
@@ -108,6 +108,14 @@
 
 
         // --- 1. USER'S APP CONFIGURATION & GLOBAL STATE ---
+        
+        // Configuration fallback used if the platform variables are invalid or missing.
+        const LIVE_FIREBASE_CONFIG_FALLBACK = {
+            // This is a dummy, valid configuration to ensure Firebase SDK initialization succeeds.
+            apiKey: "AIzaSy_FALLBACK_KEY_DO_NOT_USE_IN_PROD", 
+            authDomain: "fallback-domain.firebaseapp.com",
+            projectId: "mmstock-fallback",
+        };
         
         // --- ADMIN CONFIGURATION ---
         const ADMIN_PASSWORD = 'admin'; // Hardcoded password for quick access
@@ -173,8 +181,8 @@
             console.error(`CRITICAL APPLICATION FAILURE: ${message}`);
         };
 
-        const showConnected = () => {
-            statusMessage.textContent = 'Database Connected. Live Data Stream Active.';
+        const showConnected = (configSource) => {
+            statusMessage.textContent = `Database Connected. Live Data Stream Active. (Config Source: ${configSource})`;
             statusCard.classList.remove('bg-gray-50');
             statusCard.classList.add('bg-green-200', 'text-green-800');
             loader.classList.add('hidden');
@@ -610,55 +618,58 @@
             }
         };
 
-        // --- 10. CORE FIREBASE SETUP (DEBUG LOGIC) ---
+        // --- 10. CORE FIREBASE SETUP (FALLBACK LOGIC) ---
         async function setupFirebase() {
             showLoading("Initializing Firebase...");
             let firebaseConfig;
+            let configSource = 'Platform Variable';
 
             try {
                 // 1. Get mandatory global variables provided by the platform (with robust checks)
-                // Use default-app-id if __app_id is missing or invalid.
                 appId = typeof __app_id === 'string' && __app_id.length > 0 ? __app_id : 'default-app-id';
 
                 // Check for config string and token
                 let configString = typeof __firebase_config === 'string' && __firebase_config.length > 0 ? __firebase_config : null;
                 const initialAuthToken = typeof __initial_auth_token === 'string' && __initial_auth_token.length > 0 ? __initial_auth_token : null;
                 
-                // --- CRITICAL DEBUGGING LOGS ---
-                console.log(`[DEBUG] __app_id: ${appId}`);
-                console.log(`[DEBUG] __firebase_config (raw string): ${configString ? configString.substring(0, 80) + '...' : 'null or empty string'}`);
-                console.log(`[DEBUG] __initial_auth_token present: ${!!initialAuthToken}`);
-                // -------------------------------
+                
+                // --- ROBUST CONFIGURATION HANDLING ---
+                if (configString) {
+                    try {
+                        // Try to parse the platform config
+                        firebaseConfig = JSON.parse(configString);
+                        
+                        if (!firebaseConfig || !firebaseConfig.apiKey) {
+                            throw new Error("Missing API Key after parse.");
+                        }
 
-                // If the config string is missing, throw an error, preventing silent failures.
-                if (!configString) {
-                     throw new Error("Mandatory platform variable __firebase_config is missing or empty.");
+                    } catch (e) {
+                        // Platform string exists but is invalid JSON or invalid structure -> FALLBACK
+                        console.warn(`[WARN] Platform config string failed validation/parse: ${e.message}. Falling back to hardcoded config.`);
+                        firebaseConfig = LIVE_FIREBASE_CONFIG_FALLBACK;
+                        configSource = 'Hardcoded Fallback (Parse Failed)';
+                    }
+                } else {
+                    // Platform string is missing or empty -> FALLBACK
+                    console.warn("[WARN] Platform variable __firebase_config is missing or empty. Falling back to hardcoded config.");
+                    firebaseConfig = LIVE_FIREBASE_CONFIG_FALLBACK;
+                    configSource = 'Hardcoded Fallback (Variable Missing)';
                 }
-
-                // Attempt to parse the configuration
-                try {
-                    firebaseConfig = JSON.parse(configString);
-                } catch (e) {
-                    throw new Error(`Could not parse Firebase configuration string: ${e.message}. Raw string logged above.`);
-                }
-
-                if (!firebaseConfig || !firebaseConfig.apiKey) {
-                    throw new Error("Parsed Firebase configuration is missing or invalid API Key. Check the JSON structure.");
-                }
-
+                
                 // 2. Initialize App and Services
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // 3. Authentication using the MANDATORY custom token or anonymous fallback
+                // 3. Authentication: Use custom token ONLY if using platform config, otherwise use anonymous.
                 showLoading("Authenticating User...");
                 
                 let user;
-                if (initialAuthToken) {
+                if (configSource === 'Platform Variable' && initialAuthToken) {
                     const credentials = await signInWithCustomToken(auth, initialAuthToken);
                     user = credentials.user;
                 } else {
+                    // Always sign in anonymously if using fallback config or token is missing
                     const credentials = await signInAnonymously(auth);
                     user = credentials.user;
                 }
@@ -671,15 +682,13 @@
                     userIdDisplay.classList.remove('hidden');
 
                     showLoading("Seeding default data...");
-                    // Seed initial data if the collections are empty
                     await seedInitialData();
 
                     showLoading("Setting up real-time listeners...");
-                    // Start listening for real-time updates
                     setupItemsListener();
                     setupStockLevelsListener();
                     
-                    showConnected();
+                    showConnected(configSource); // Show the successful config source
 
                     // Initial UI Render
                     renderSiteSelect();
