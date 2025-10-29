@@ -1779,5 +1779,56 @@
 })();
 </script>
 
+
+<script>
+(function(){
+  // Wait until original module functions exist
+  const waitForFirebase = () => {
+    const origAddItem = window.addItem;
+    const origAddLocation = window.addLocation;
+
+    if (typeof origAddItem === 'function' && typeof origAddLocation === 'function') {
+      console.log('Binding admin addItem/addLocation to global scope safely');
+
+      // Safe global bindings (no recursion)
+      window.addItem = async function(...args){
+        try {
+          await origAddItem.apply(this, args);
+          console.log('Item added successfully');
+          // No reload for admin
+        } catch(err){
+          console.error('Error adding item:', err);
+        }
+      };
+
+      window.addLocation = async function(...args){
+        try {
+          await origAddLocation.apply(this, args);
+          console.log('Location added successfully');
+          // No reload for admin
+        } catch(err){
+          console.error('Error adding location:', err);
+        }
+      };
+      return true;
+    }
+    return false;
+  };
+
+  const int = setInterval(() => {
+    if (waitForFirebase()) clearInterval(int);
+  }, 500);
+
+  // Keep refreshAfterTransaction only for staff actions
+  window.refreshAfterTransaction = function(){
+    // Refresh only if in staff view (admin panel hidden)
+    const isStaffVisible = document.getElementById('staff-view') && 
+                           !document.getElementById('staff-view').classList.contains('hidden');
+    if (isStaffVisible) setTimeout(()=>location.reload(), 1200);
+  };
+
+})();
+</script>
+
 </body>
 </html>
