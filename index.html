@@ -1743,5 +1743,41 @@
 })();
 </script>
 
+
+<script>
+(function(){
+  // Attach Firebase addItem and addLocation to window so Admin buttons work
+  if (typeof addItem === 'function') {
+    window.addItem = async function(...args) {
+      try {
+        const result = await addItem.apply(this, args);
+        console.log('Item added:', result);
+        setTimeout(() => location.reload(), 1200);
+      } catch (err) {
+        console.error('Error adding item:', err);
+        alert('Error adding item: ' + err.message);
+      }
+    };
+  } else {
+    console.warn('addItem() not found in module scope.');
+  }
+
+  if (typeof addLocation === 'function') {
+    window.addLocation = async function(...args) {
+      try {
+        const result = await addLocation.apply(this, args);
+        console.log('Location added:', result);
+        setTimeout(() => location.reload(), 1200);
+      } catch (err) {
+        console.error('Error adding location:', err);
+        alert('Error adding location: ' + err.message);
+      }
+    };
+  } else {
+    console.warn('addLocation() not found in module scope.');
+  }
+})();
+</script>
+
 </body>
 </html>
