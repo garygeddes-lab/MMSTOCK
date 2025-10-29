@@ -436,7 +436,7 @@
                 console.log("Items updated:", items);
             }, (error) => console.error("Error fetching items:", error));
 
-            // 3. Stock Levels Listener (Public Data) - FIXED PATH
+            // 3. Stock Levels Listener (Public Data) - FIXED PATH to 5 segments
             const stockLevelsColRef = collection(db, `/artifacts/${appId}/public/data/stock_levels`);
             onSnapshot(stockLevelsColRef, (snapshot) => {
                 stockLevels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -613,7 +613,7 @@
                     for (const [itemId, quantityRemoved] of itemsToUpdate) {
                         const itemName = items.find(i => i.id === itemId)?.name;
                         
-                        // 1. Update Stock Level (Public Collection) - FIXED PATH
+                        // 1. Update Stock Level (Public Collection) - Correct 5-segment path
                         const stockDocId = `${locationId}_${itemId}`;
                         const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
                         
@@ -836,7 +836,7 @@
                 return;
             }
 
-            // Fetch current low stock comments (Public Data) - FIXED PATH
+            // Fetch current low stock comments (Public Data) - Correct 5-segment path
             const commentsRef = collection(db, `/artifacts/${appId}/public/data/low_stock_comments`);
             const commentsSnap = await getDocs(commentsRef);
             const lowStockComments = {};
@@ -925,7 +925,7 @@
             }
         };
 
-        /** Saves a comment on a low stock item for a specific location (Public Data) - FIXED PATH */
+        /** Saves a comment on a low stock item for a specific location (Public Data) - Correct 5-segment path */
         window.saveLowStockComment = async (locationId, itemId) => {
             const commentId = `${locationId}_${itemId}`;
             const commentInput = document.getElementById(`comment-input-${commentId}`);
@@ -1058,7 +1058,7 @@
                 const batch = writeBatch(db);
                 
                 for (const update of updates) {
-                    // FIXED PATH
+                    // Correct 5-segment path
                     const stockDocId = `${locationId}_${update.itemId}`;
                     const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
                     
@@ -1147,7 +1147,7 @@
                 const batch = writeBatch(db);
 
                 for (const loc of targetLocations) {
-                    // FIXED PATH
+                    // Correct 5-segment path
                     const stockDocId = `${loc.id}_${itemId}`;
                     const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
                     
@@ -1335,68 +1335,6 @@
         window.saveLowStockComment = saveLowStockComment;
 
         initializeFirebase();
-
-        // Sample Data Seeding (Run only once manually if needed for testing)
-        // Note: This is commented out to prevent accidental writes on every load.
-        /*
-        const seedSampleData = async () => {
-            if (!db || !userId) return;
-            console.log("Seeding sample data...");
-
-            const batch = writeBatch(db);
-            const batchPublic = writeBatch(db);
-            
-            // 1. Locations
-            const locData = [
-                { name: 'Dundee', id: 'loc1' },
-                { name: 'Perth', id: 'loc2' },
-                { name: 'Fife', id: 'loc3' },
-            ];
-            const locationsRef = collection(db, `/artifacts/${appId}/users/${userId}/locations`);
-            locData.forEach(loc => {
-                batch.set(doc(locationsRef, loc.id), { name: loc.name });
-            });
-            
-            // 2. Items
-            const itemData = [
-                { name: 'Gloves (M)', threshold: 150, id: 'item1' },
-                { name: 'Aprons', threshold: 200, id: 'item2' },
-                { name: 'Masks (FFP2)', threshold: 50, id: 'item3' },
-            ];
-            const itemsRef = collection(db, `/artifacts/${appId}/users/${userId}/items`);
-            itemData.forEach(item => {
-                batch.set(doc(itemsRef, item.id), { name: item.name, threshold: item.threshold });
-            });
-
-            await batch.commit();
-
-            // 3. Stock Levels (Public) - FIXED PATH
-            const stockLevelsRef = collection(db, `/artifacts/${appId}/public/data/stock_levels`);
-            locData.forEach(loc => {
-                itemData.forEach(item => {
-                    const docId = `${loc.id}_${item.id}`;
-                    const quantity = Math.floor(Math.random() * 500) + (item.threshold * 2); // Initial stock > threshold
-                    
-                    batchPublic.set(doc(stockLevelsRef, docId), {
-                        locationId: loc.id,
-                        itemId: item.id,
-                        quantity: quantity
-                    });
-                });
-            });
-
-            // Set one item to low stock for demo
-            batchPublic.set(doc(stockLevelsRef, 'loc1_item3'), {
-                locationId: 'loc1',
-                itemId: 'item3',
-                quantity: 45 // Below 50 threshold
-            }, { merge: true });
-
-            await batchPublic.commit();
-            console.log("Sample data seeded.");
-        };
-        // window.seedSampleData = seedSampleData; // Uncomment and run from console if needed
-        */
     </script>
 </body>
 </html>
