@@ -28,9 +28,27 @@
         import { getFirestore, doc, collection, onSnapshot, setDoc, updateDoc, increment, deleteDoc, query, where, addDoc, serverTimestamp, getDocs, runTransaction, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // IMPORTANT: Global variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
+  authDomain: "mmstock-8bcdf.firebaseapp.com",
+  projectId: "mmstock-8bcdf",
+  storageBucket: "mmstock-8bcdf.firebasestorage.app",
+  messagingSenderId: "935228101629",
+  appId: "1:935228101629:web:766421e0da43becc323f94",
+  measurementId: "G-NWJ4Z7ZHT8"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
         
         // --- ADMIN CONFIGURATION (Simple Password) ---
         const ADMIN_PASSWORD = 'admin'; // Hardcoded password for quick access
