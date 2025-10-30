@@ -138,8 +138,7 @@
                                 <option value="">Filter by Location</option>
                                 <!-- Options populated by JS -->
                             </select>
-                            <input type="date" id="log-filter-start-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
-<input type="date" id="log-filter-end-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
+                            <input type="date" id="log-filter-date" class="p-2 border rounded-lg focus:ring-primary-purple focus:border-primary-purple">
                             <button onclick="applyLogFilters()" class="py-2 px-4 bg-primary-purple text-white rounded-lg hover:bg-primary-purple/90 transition duration-150">Apply Filters</button>
                             <button onclick="exportLog()" class="py-2 px-4 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Download Log (CSV)</button>
                         </div>
@@ -270,7 +269,7 @@
 
             <input type="text" id="staff-name" placeholder="Your Name (Required)" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-primary-purple focus:border-primary-purple">
             
-            <button onclick="confirmRemoveItemAdmin()" class="w-full py-3 bg-primary-purple text-white font-bold rounded-lg shadow-md hover:bg-primary-purple/90 transition duration-150 ease-in-out">
+            <button onclick="confirmRemoval()" class="w-full py-3 bg-primary-purple text-white font-bold rounded-lg shadow-md hover:bg-primary-purple/90 transition duration-150 ease-in-out">
                 Confirm & Record Transaction
             </button>
             <button onclick="closeCheckoutModal()" class="w-full mt-2 py-2 text-primary-purple rounded-lg hover:bg-gray-100 transition duration-150 ease-in-out">
@@ -946,91 +945,81 @@
         };
 
         /** Executes the atomic deletion of a transaction and reverses the stock change */
-        window.deleteTransaction = (transactionId, quantityChange, locationName, itemName) => {
-            // The stock adjustment is the reverse of the recorded quantity
-            const stockAdjustment = -quantityChange; 
-            const action = stockAdjustment > 0 ? 'increase' : 'decrease';
-            const absAdjustment = Math.abs(stockAdjustment);
+window.deleteTransaction = (transactionId, quantityChange, locationName, itemName) => {
+    // The stock adjustment is the reverse of the recorded quantity
+    const stockAdjustment = -quantityChange;
+    const action = stockAdjustment > 0 ? 'increase' : 'decrease';
+    const absAdjustment = Math.abs(stockAdjustment);
 
-            const warningBody = `
-                <p class="text-gray-700 mb-4">You are about to delete a transaction recorded for **${itemName}** at **${locationName}**.</p>
-                <p class="text-red-600 font-bold mb-4">WARNING: This will automatically **${action}** the stock level for this item by **${absAdjustment}** to reverse the transaction's effect.</p>
-                <p class="text-sm text-gray-500">Do you wish to proceed?</p>
-            `;
+    const warningBody = `
+        <p class="text-gray-700 mb-4">You are about to delete a transaction recorded for <strong>${itemName}</strong> at <strong>${locationName}</strong>.</p>
+        <p class="text-red-600 font-bold mb-4">WARNING: This will automatically ${action} the stock level for this item by ${absAdjustment} to reverse the transaction's effect.</p>
+        <p class="text-sm text-gray-500">Do you wish to proceed?</p>
+    `;
 
-            // Function to perform the deletion
-            const performDeletion = async () => {
-                closeMessageModal();
-                showMessageModal("Processing...", "Deleting transaction and adjusting stock. Please wait.");
+    // Define and attach performDeletion globally so the button can find it
+    window.performDeletion = async () => {
+        closeMessageModal();
+        showMessageModal("Processing...", "Deleting transaction and adjusting stock. Please wait...");
 
-                const transactionRef = doc(db, `/artifacts/${appId}/users/${userId}/transactions`, transactionId);
-                
-                const item = items.find(i => i.name === itemName);
-                const location = locations.find(l => l.name === locationName);
+        const transactionRef = doc(db, `/artifacts/${appId}/users/${userId}/transactions`, transactionId);
 
-                if (!item || !location) {
-                    showMessageModal("Error", "Could not find associated item or location data. Cannot adjust stock, but the log entry will be removed.");
-                    await deleteDoc(transactionRef);
-                    return;
+        const item = items.find(i => i.name === itemName);
+        const location = locations.find(l => l.name === locationName);
+
+        if (!item || !location) {
+            showMessageModal("Error", "Could not find associated item or location data. Cannot adjust stock, but the log entry will be removed.");
+            await deleteDoc(transactionRef);
+            return;
+        }
+
+        const stockDocId = `${location.id}_${item.id}`;
+        const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
+
+        try {
+            await runTransaction(db, async (t) => {
+                const stockSnap = await t.get(stockRef);
+
+                if (!stockSnap.exists()) {
+                    throw new Error(`Stock document not found for reversal. Log entry deleted.`);
                 }
-                
-                const stockDocId = `${location.id}_${item.id}`;
-                const stockRef = doc(db, `/artifacts/${appId}/public/data/stock_levels`, stockDocId);
 
-                try {
-                    // Use a transaction for the atomic delete and stock reversal
-                    await runTransaction(db, async (t) => {
-                        // 1. Read Stock Document
-                        const stockSnap = await t.get(stockRef);
-                        
-                        if (!stockSnap.exists()) {
-                            // If stock document is missing, proceed with transaction deletion, but throw an error for the user to see.
-                            throw new Error(`Stock document not found for reversal. Log entry deleted.`);
-                        }
-                        
-                        const currentQuantity = stockSnap.data().quantity;
-                        const newQuantity = currentQuantity + stockAdjustment;
+                const currentQuantity = stockSnap.data().quantity;
+                const newQuantity = currentQuantity + stockAdjustment;
 
-                        if (newQuantity < 0) {
-                            // Rollback the transaction if it results in negative stock
-                            throw new Error(`Reversing this transaction would result in negative stock (${currentQuantity} + ${stockAdjustment} = ${newQuantity}). Aborting.`);
-                        }
-                        
-                        // 2. Update Stock Document
-                        t.update(stockRef, { quantity: newQuantity });
-                        
-                        // 3. Delete Transaction Document
-                        t.delete(transactionRef);
-                    });
-
-                    showMessageModal("Success", `Transaction deleted and stock for ${itemName} at ${locationName} adjusted by ${stockAdjustment}.`);
-                } catch (error) {
-                    console.error("Atomic Deletion/Adjustment failed: ", error);
-                    // Check if it's the "Stock document not found" error to provide a softer message
-                    if (error.message.includes("Stock document not found for reversal")) {
-                         // Fallback: Just delete the log entry if stock reversal failed due to missing stock doc
-                        await deleteDoc(transactionRef);
-                        showMessageModal("Partial Success", `Transaction deleted. Stock adjustment failed because the stock item was not found.`);
-                    } else {
-                        showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
-                    }
+                if (newQuantity < 0) {
+                    throw new Error(`Reversing this transaction would result in negative stock (${currentQuantity} + ${stockAdjustment} = ${newQuantity}). Aborting.`);
                 }
-            };
 
-            // Set up the custom confirmation modal
-            document.getElementById('message-title').textContent = "Confirm Transaction Deletion";
-            document.getElementById('message-body').innerHTML = warningBody;
+                t.update(stockRef, { quantity: newQuantity });
+                t.delete(transactionRef);
+            });
 
-            const modalActions = document.getElementById('modal-actions');
-            modalActions.innerHTML = `
-                <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
-                <button onclick="performDeletion()" class="py-2 px-4 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-150">Confirm Delete</button>
-            `;
+            showMessageModal("Success", `Transaction deleted and stock for ${itemName} at ${locationName} adjusted by ${stockAdjustment}.`);
+        } catch (error) {
+            console.error("Atomic Deletion/Adjustment failed: ", error);
+            if (error.message.includes("Stock document not found for reversal")) {
+                await deleteDoc(transactionRef);
+                showMessageModal("Partial Success", `Transaction deleted. Stock adjustment failed because the stock item was not found.`);
+            } else {
+                showMessageModal("Deletion Failed", error.message || "An unexpected error occurred during the stock reversal transaction.");
+            }
+        }
+    };
 
-            document.getElementById('message-modal').classList.remove('hidden');
-        };
+    // Create and show the confirmation modal
+    document.getElementById('message-title').textContent = "Confirm Transaction Deletion";
+    document.getElementById('message-body').innerHTML = warningBody;
 
-        /** Applies filters to the transaction log */
+    const modalActions = document.getElementById('modal-actions');
+    modalActions.innerHTML = `
+        <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
+        <button onclick="performDeletion()" class="py-2 px-4 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-150">Confirm Delete</button>
+    `;
+
+    document.getElementById('message-modal').classList.remove('hidden');
+};
+
         window.applyLogFilters = () => {
             const staffFilter = document.getElementById('log-filter-staff').value.toLowerCase();
             const locationFilter = document.getElementById('log-filter-location').value;
@@ -1436,7 +1425,7 @@
                     <div class="flex space-x-2">
                         <input type="number" id="threshold-input-${item.id}" placeholder="New Threshold" class="w-24 p-1 border rounded-lg text-sm">
                         <button onclick="updateItemThreshold('${item.id}')" class="py-1 px-2 bg-primary-purple text-white rounded-lg text-sm hover:bg-primary-purple/80">Update</button>
-                        <button onclick="removeItem('${item.id}', '${item.name}')" class="py-1 px-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600">Remove</button>
+                        <button onclick="deleteItem('${item.id}', '${item.name}')" class="py-1 px-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600">Remove</button>
                     </div>
                 </div>
             `).join('');
@@ -1445,7 +1434,7 @@
             locationList.innerHTML = locations.map(loc => `
                 <div class="flex justify-between items-center p-3 bg-gray-100 rounded-lg">
                     <span class="font-medium">${loc.name}</span>
-                    <button onclick="removeLocation('${loc.id}', '${loc.name}')" class="py-1 px-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600">Remove</button>
+                    <button onclick="deleteLocation('${loc.id}', '${loc.name}')" class="py-1 px-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600">Remove</button>
                 </div>
             `).join('');
         };
@@ -1517,7 +1506,7 @@
             const modalActions = document.getElementById('modal-actions');
             modalActions.innerHTML = `
                 <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
-                <button onclick="confirmRemoveLocationAdmin()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Item</button>
+                <button onclick="confirmRemoval()" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150">Remove Item</button>
             `;
             document.getElementById('message-modal').classList.remove('hidden');
         };
@@ -1596,279 +1585,63 @@
         window.deleteTransaction = deleteTransaction;
 
         initializeFirebase();
-    </script>
+    
+        // --- Patch: Safe hard-delete functions for Items & Locations (no dependency on staff name/location) ---
+        window.deleteItem = (itemId, itemName) => {
+            // Build confirmation modal content
+            document.getElementById('message-title').textContent = "Confirm Item Deletion";
+            document.getElementById('message-body').innerHTML = `<p class="text-gray-700">Are you sure you want to <strong>permanently delete</strong> the stock item: <strong>${itemName}</strong>?<br><span class="text-xs text-gray-500">This will not remove historical stock level documents or transactions.</span></p>`;
+            
+            const modalActions = document.getElementById('modal-actions');
+            modalActions.innerHTML = `
+                <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
+                <button onclick="__performDeleteItem()" class="py-2 px-4 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition duration-150">Delete Item</button>
+            `;
 
+            // Define the global confirm handler capturing the item info
+            window.__performDeleteItem = async () => {
+                try {
+                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/items`, itemId));
+                    closeMessageModal();
+                    showMessageModal("Deleted", `Stock Item '<strong>${itemName}</strong>' was deleted.`);
+                    if (typeof loadItems === 'function') { try { loadItems(); } catch (e) { console.warn(e); } }
+                    else { try { renderAdminSettings(); } catch (e) { console.warn(e); } }
+                } catch (error) {
+                    console.error("Error deleting item:", error);
+                    closeMessageModal();
+                    showMessageModal("Error", "Failed to delete item. See console for details.");
+                }
+            };
 
+            document.getElementById('message-modal').classList.remove('hidden');
+        };
 
+        window.deleteLocation = (locationId, locationName) => {
+            document.getElementById('message-title').textContent = "Confirm Location Deletion";
+            document.getElementById('message-body').innerHTML = `<p class="text-red-600 font-bold mb-2">WARNING: Permanently delete ${locationName}?</p><p class="text-gray-700">This will not remove existing stock level documents or transactions associated with this location.</p>`;
 
+            const modalActions = document.getElementById('modal-actions');
+            modalActions.innerHTML = `
+                <button onclick="closeMessageModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-150">Cancel</button>
+                <button onclick="__performDeleteLocation()" class="py-2 px-4 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition duration-150">Delete Location</button>
+            `;
 
+            window.__performDeleteLocation = async () => {
+                try {
+                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/locations`, locationId));
+                    closeMessageModal();
+                    showMessageModal("Deleted", `Location '<strong>${locationName}</strong>' was deleted.`);
+                    if (typeof loadLocations === 'function') { try { loadLocations(); } catch (e) { console.warn(e); } }
+                    else { try { renderAdminSettings(); } catch (e) { console.warn(e); } }
+                } catch (error) {
+                    console.error("Error deleting location:", error);
+                    closeMessageModal();
+                    showMessageModal("Error", "Failed to delete location. See console for details.");
+                }
+            };
 
-
-
-
-
-<!-- Admin Confirm Delete Modals -->
-<div id="admin-confirm-item-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm m-4 text-center">
-    <h3 class="text-2xl font-bold mb-4 text-primary-purple">Confirm Delete</h3>
-    <p class="text-gray-700 mb-6">Are you sure you want to delete this <strong>stock item</strong>?</p>
-    <div class="flex justify-center gap-4">
-      <button onclick="confirmRemoveItemAdmin()" class="px-5 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">Delete</button>
-      <button onclick="document.getElementById('admin-confirm-item-modal').classList.add('hidden')" class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<div id="admin-confirm-location-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm m-4 text-center">
-    <h3 class="text-2xl font-bold mb-4 text-primary-purple">Confirm Delete</h3>
-    <p class="text-gray-700 mb-6">Are you sure you want to delete this <strong>location</strong>?</p>
-    <div class="flex justify-center gap-4">
-      <button onclick="confirmRemoveLocationAdmin()" class="px-5 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">Delete</button>
-      <button onclick="document.getElementById('admin-confirm-location-modal').classList.add('hidden')" class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Cancel</button>
-    </div>
-  </div>
-</div>
-
-
-
-
-
-<!-- Admin-only confirm modals (separate from staff removal) -->
-<div id="admin-confirm-item-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm m-4 text-center">
-    <h3 class="text-2xl font-bold mb-4 text-primary-purple">Confirm Delete</h3>
-    <p class="text-gray-700 mb-6">Are you sure you want to delete this <strong>stock item</strong>?</p>
-    <div class="flex justify-center gap-4">
-      <button id="admin-confirm-item-delete" class="px-5 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">Delete</button>
-      <button onclick="document.getElementById('admin-confirm-item-modal').classList.add('hidden')" class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<div id="admin-confirm-location-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm m-4 text-center">
-    <h3 class="text-2xl font-bold mb-4 text-primary-purple">Confirm Delete</h3>
-    <p class="text-gray-700 mb-6">Are you sure you want to delete this <strong>location</strong>?</p>
-    <div class="flex justify-center gap-4">
-      <button id="admin-confirm-location-delete" class="px-5 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">Delete</button>
-      <button onclick="document.getElementById('admin-confirm-location-modal').classList.add('hidden')" class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Cancel</button>
-    </div>
-  </div>
-</div>
-
-
-
-
-
-
-
-
-<!-- ===== Admin-only Confirm Delete Modals ===== -->
-<div id="admin-confirm-item-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm m-4 text-center">
-    <h3 class="text-2xl font-bold mb-4 text-primary-purple">Confirm Item Deletion</h3>
-    <p class="text-gray-700 mb-6">Are you sure you want to remove this <strong>stock item</strong>?</p>
-    <div class="flex justify-center gap-4">
-      <button id="admin-confirm-item-delete" class="px-5 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">Remove</button>
-      <button onclick="document.getElementById('admin-confirm-item-modal').classList.add('hidden')" class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<div id="admin-confirm-location-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm m-4 text-center">
-    <h3 class="text-2xl font-bold mb-4 text-primary-purple">Confirm Location Deletion</h3>
-    <p class="text-gray-700 mb-6">Are you sure you want to remove this <strong>location</strong>?</p>
-    <div class="flex justify-center gap-4">
-      <button id="admin-confirm-location-delete" class="px-5 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">Remove</button>
-      <button onclick="document.getElementById('admin-confirm-location-modal').classList.add('hidden')" class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===== Admin Success Modal (manual close) ===== -->
-<div id="admin-success-modal" class="hidden fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-  <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm m-4 text-center">
-    <div class="mx-auto mb-3 w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-      </svg>
-    </div>
-    <h3 id="admin-success-title" class="text-xl font-bold text-green-700">Success</h3>
-    <p id="admin-success-text" class="text-gray-700 mt-2">Action completed.</p>
-    <div class="mt-5">
-      <button onclick="document.getElementById('admin-success-modal').classList.add('hidden')" class="px-5 py-2 bg-primary-purple text-white font-semibold rounded-lg hover:opacity-90 transition">Close</button>
-    </div>
-  </div>
-</div>
-
-
-<script>
-(function(){
-  const qs = s => document.querySelector(s);
-  const qsa = s => Array.from(document.querySelectorAll(s));
-
-  // ----- Utility: success modal (manual close) -----
-  function showAdminSuccess(message){
-    const m = qs('#admin-success-modal');
-    if(!m) return alert(message || 'Success');
-    qs('#admin-success-title').textContent = 'Success';
-    qs('#admin-success-text').textContent = message || 'Completed.';
-    m.classList.remove('hidden');
-  }
-
-  // ----- Capture selected ids from admin tables (icons inside rows) -----
-  window.selectedItemId = null;
-  window.selectedLocationId = null;
-
-  document.addEventListener('click', (e) => {
-    const adminPanel = qs('#admin-panel');
-    if (!adminPanel || adminPanel.classList.contains('hidden')) return;
-
-    const el = e.target.closest('button, a, i, svg, span');
-    if(!el) return;
-
-    // Determine if it's an item or location trash icon
-    const row = el.closest('tr') || el.closest('[data-id]') || el.closest('[data-item-id]') || el.closest('[data-location-id]');
-    const itemId = el.dataset.itemId || row?.dataset.itemId || row?.getAttribute('data-item-id') || row?.getAttribute('data-id');
-    const locId  = el.dataset.locationId || row?.dataset.locationId || row?.getAttribute('data-location-id');
-
-    const classes = (el.className || '') + ' ' + (row?.className || '');
-    const isItem = /delete-item|item-delete|trash-item/i.test(classes);
-    const isLoc  = /delete-location|location-delete|trash-location/i.test(classes);
-
-    // If the element or row still tries to call staff confirmRemoval(), block it in admin
-    const onclick = (el.getAttribute('onclick') || '') + ' ' + (row?.getAttribute?.('onclick') || '');
-    const isStaffConfirm = /confirmRemoval\s*\(/i.test(onclick);
-
-    if (isStaffConfirm || isItem || itemId) {
-      // Treat as item delete intent
-      window.selectedItemId = itemId || window.selectedItemId;
-      e.preventDefault(); e.stopPropagation();
-      qs('#admin-confirm-item-modal')?.classList.remove('hidden');
-      return false;
-    }
-    if (isLoc || locId) {
-      // Treat as location delete intent
-      window.selectedLocationId = locId || window.selectedLocationId;
-      e.preventDefault(); e.stopPropagation();
-      qs('#admin-confirm-location-modal')?.classList.remove('hidden');
-      return false;
-    }
-  }, true);
-
-  // ----- Global admin delete functions for inline onclick support -----
-  window.confirmRemoveItemAdmin = async function(){
-    try{
-      const id = window.selectedItemId;
-      if(!id){ alert('No item selected.'); return; }
-      await deleteDoc(doc(db, 'items', id));
-      showAdminSuccess('Item deleted successfully.');
-      qs('#admin-confirm-item-modal')?.classList.add('hidden');
-      window.selectedItemId = null;
-    }catch(err){
-      console.error(err);
-      alert('Failed to delete item: ' + (err?.message || err));
-    }
-  };
-
-  window.confirmRemoveLocationAdmin = async function(){
-    try{
-      const id = window.selectedLocationId;
-      if(!id){ alert('No location selected.'); return; }
-      await deleteDoc(doc(db, 'locations', id));
-      showAdminSuccess('Location deleted successfully.');
-      qs('#admin-confirm-location-modal')?.classList.add('hidden');
-      window.selectedLocationId = null;
-    }catch(err){
-      console.error(err);
-      alert('Failed to delete location: ' + (err?.message || err));
-    }
-  };
-
-  // Also bind the admin modal Remove buttons (in case no inline onclick)
-  function bindAdminConfirmButtons(){
-    const itemBtn = qs('#admin-confirm-item-delete');
-    const locBtn  = qs('#admin-confirm-location-delete');
-    if(itemBtn && !itemBtn.dataset.bound){
-      itemBtn.addEventListener('click', () => window.confirmRemoveItemAdmin());
-      itemBtn.dataset.bound = '1';
-    }
-    if(locBtn && !locBtn.dataset.bound){
-      locBtn.addEventListener('click', () => window.confirmRemoveLocationAdmin());
-      locBtn.dataset.bound = '1';
-    }
-  }
-  bindAdminConfirmButtons();
-  document.addEventListener('DOMContentLoaded', bindAdminConfirmButtons);
-
-  // ----- Staff: Items to Remove summary -----
-  window.showConfirmRemovalModal = function(){
-    const staffView = qs('#staff-view');
-    if(!staffView || staffView.classList.contains('hidden')) return;
-    const list = qs('#confirm-remove-list');
-    const cart = window.removalCart || {};
-    if(list){
-      const entries = Object.entries(cart).filter(([id,q]) => q>0);
-      list.innerHTML = entries.length
-        ? entries.map(([id,q]) => {
-            const name = (window.items?.find(i=>i.id===id)?.name) || 'Unknown Item';
-            return `<li>${name} — <strong>${q}</strong></li>`;
-          }).join('')
-        : '<li class="text-gray-500 italic">No items selected for removal.</li>';
-    }
-    qs('#confirm-remove-modal')?.classList.remove('hidden');
-  };
-
-  // ----- Filters: null-safe & re-render -----
-  window.applyLogFilters = function(){
-    try{
-      const staffEl = qs('#log-filter-staff');
-      const locEl   = qs('#log-filter-location');
-      const sEl     = qs('#log-filter-start-date');
-      const eEl     = qs('#log-filter-end-date');
-
-      const staff = (staffEl ? staffEl.value : '').toLowerCase();
-      const loc   = (locEl ? locEl.value : '');
-      const s     = (sEl ? sEl.value : '');
-      const e     = (eEl ? eEl.value : '');
-
-      const data = Array.isArray(window.transactions) ? window.transactions : [];
-      const filtered = data.filter(t => {
-        const sm = staff ? (t.staffName||'').toLowerCase().includes(staff) : true;
-        const lm = loc ? t.location===loc : true;
-        let dm = true;
-        if((s||e) && t.timestamp){
-          const d = new Date(t.timestamp.seconds*1000);
-          const sd = s ? new Date(s) : new Date(0);
-          const ed = e ? new Date(e) : new Date();
-          const einc = new Date(ed.getTime()+86400000-1);
-          dm = d>=sd && d<=einc;
-        }
-        return sm && lm && dm;
-      });
-      if(typeof window.renderTransactionLog === 'function'){
-        window.renderTransactionLog(filtered);
-      }
-    }catch(err){
-      console.error('applyLogFilters error:', err);
-    }
-  };
-
-  // Bind Apply Filters button by id or label
-  function bindFilters(){
-    const b = qs('#apply-filters-btn') || qsa('button').find(btn => /apply\s*filters/i.test(btn.textContent||''));
-    if(b && !b.dataset.boundFilters){
-      b.onclick = () => window.applyLogFilters();
-      b.dataset.boundFilters = '1';
-    }
-  }
-  bindFilters();
-  document.addEventListener('DOMContentLoaded', bindFilters);
-
-})();
+            document.getElementById('message-modal').classList.remove('hidden');
+        };
 </script>
-
 </body>
 </html>
