@@ -312,7 +312,7 @@
         let app;
         let db;
         let auth;
-        let userId = 'anonymous'; // Default ID
+        let userId = 'global'; // Shared global user for all devices
         let currentAuthUser = null;
 
         // Data Models
@@ -335,7 +335,7 @@
         // --- Firebase Configuration and Environment Variables ---
         
         // The __app_id and __initial_auth_token are provided by the hosting environment.
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const appId = 'mmstock-8bcdf';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // User-provided Firebase Configuration
