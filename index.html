@@ -4,7 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mitchell & Murdoch Stock Control</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com">
+// === Diagnostic Logging ===
+window.appId = appId;
+window.userId = userId;
+console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+
+</script>
     <!-- Load Inter font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <script>
@@ -23,7 +29,13 @@
                 }
             }
         }
-    </script>
+    
+// === Diagnostic Logging ===
+window.appId = appId;
+window.userId = userId;
+console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+
+</script>
     <style>
         .container-fluid {
             min-height: 100vh;
@@ -1698,6 +1710,12 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                 }
             }
         })();
+
+
+// === Diagnostic Logging ===
+window.appId = appId;
+window.userId = userId;
+console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
 
 </script>
 </body>
