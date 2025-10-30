@@ -8,10 +8,13 @@
 // === Diagnostic Logging ===
 window.appId = appId;
 window.userId = userId;
-console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+console.log("✅ Connected to Firestore path:", `/artifacts/mmstock-8bcdf/users/global`);
 
 
-console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+console.log("✅ Connected to Firestore path:", `/artifacts/mmstock-8bcdf/users/global`);
+
+
+console.log("🚀 Firestore will read/write to: /artifacts/mmstock-8bcdf/users/global");
 
 </script>
     <!-- Load Inter font -->
@@ -36,10 +39,13 @@ console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${use
 // === Diagnostic Logging ===
 window.appId = appId;
 window.userId = userId;
-console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+console.log("✅ Connected to Firestore path:", `/artifacts/mmstock-8bcdf/users/global`);
 
 
-console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+console.log("✅ Connected to Firestore path:", `/artifacts/mmstock-8bcdf/users/global`);
+
+
+console.log("🚀 Firestore will read/write to: /artifacts/mmstock-8bcdf/users/global");
 
 </script>
     <style>
@@ -461,7 +467,7 @@ console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${use
             if (!db || !userId) return;
 
             // 1. Locations Listener (Private Data)
-            const locationsColRef = collection(db, `/artifacts/${appId}/users/${userId}/locations`);
+            const locationsColRef = collection(db, `/artifacts/mmstock-8bcdf/users/global/locations`);
             onSnapshot(locationsColRef, (snapshot) => {
                 locations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderLocationButtons();
@@ -476,7 +482,7 @@ console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${use
             }, (error) => console.error("Error fetching locations:", error));
 
             // 2. Items Listener (Private Data)
-            const itemsColRef = collection(db, `/artifacts/${appId}/users/${userId}/items`);
+            const itemsColRef = collection(db, `/artifacts/mmstock-8bcdf/users/global/items`);
             onSnapshot(itemsColRef, (snapshot) => {
                 items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderAdminSettings();
@@ -498,7 +504,7 @@ console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${use
             }, (error) => console.error("Error fetching stock levels:", error));
 
             // 4. Transactions Listener (Private Data, Admin only)
-            const transactionsColRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
+            const transactionsColRef = collection(db, `/artifacts/mmstock-8bcdf/users/global/transactions`);
             onSnapshot(transactionsColRef, (snapshot) => {
                 transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                     .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
@@ -566,7 +572,7 @@ console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${use
             const sixtyDays = 60 * 24 * 60 * 60 * 1000;
             const cutoffDate = Timestamp.fromMillis(Date.now() - sixtyDays);
 
-            const transactionsColRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
+            const transactionsColRef = collection(db, `/artifacts/mmstock-8bcdf/users/global/transactions`);
             
             // Query for documents older than 60 days
             const q = query(transactionsColRef, where('timestamp', '<', cutoffDate));
@@ -767,7 +773,7 @@ window.openCheckoutModal = () => {
             
             let successfulItems = [];
             let failedItems = [];
-            const logCollectionRef = collection(db, `/artifacts/${appId}/users/${userId}/transactions`);
+            const logCollectionRef = collection(db, `/artifacts/mmstock-8bcdf/users/global/transactions`);
 
             // Loop through each item and run a separate, dedicated transaction for maximum stability
             for (const [itemId, quantityRemoved] of itemsToUpdate) {
@@ -1010,7 +1016,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
         closeMessageModal();
         showMessageModal("Processing...", "Deleting transaction and adjusting stock. Please wait...");
 
-        const transactionRef = doc(db, `/artifacts/${appId}/users/${userId}/transactions`, transactionId);
+        const transactionRef = doc(db, `/artifacts/mmstock-8bcdf/users/global/transactions`, transactionId);
 
         const item = items.find(i => i.name === itemName);
         const location = locations.find(l => l.name === locationName);
@@ -1341,7 +1347,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                     }, { merge: true });
 
                     // Record Transaction (Private Collection)
-                    const transactionRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
+                    const transactionRef = doc(collection(db, `/artifacts/mmstock-8bcdf/users/global/transactions`));
                     batch.set(transactionRef, {
                         type: 'check',
                         staffName: 'Admin (Stock Check)',
@@ -1438,7 +1444,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
                     }, { merge: true });
 
                     // 2. Record Transaction (Private Collection)
-                    const transactionRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
+                    const transactionRef = doc(collection(db, `/artifacts/mmstock-8bcdf/users/global/transactions`));
                     batch.set(transactionRef, {
                         type: 'addition', // Treat mass update as addition/subtraction by admin
                         staffName: 'Admin (Mass Update)',
@@ -1498,7 +1504,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             }
 
             try {
-                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/items`), {
+                await addDoc(collection(db, `/artifacts/mmstock-8bcdf/users/global/items`), {
                     name,
                     threshold,
                     createdAt: Timestamp.now()
@@ -1523,9 +1529,9 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             }
 
             try {
-                const itemRef = doc(db, `/artifacts/${appId}/users/${userId}/items`, itemId);
+                const itemRef = doc(db, `/artifacts/mmstock-8bcdf/users/global/items`, itemId);
                 await updateDoc(itemRef, { threshold: newThreshold });
-console.log('📦 Firestore write occurred at path:', `/artifacts/${appId}/users/${userId}`);
+console.log('📦 Firestore write occurred at path:', `/artifacts/mmstock-8bcdf/users/global`);
                 input.value = '';
                 showMessageModal("Success", "Threshold updated successfully.");
             } catch (error) {
@@ -1539,7 +1545,7 @@ console.log('📦 Firestore write occurred at path:', `/artifacts/${appId}/users
             // Using a simple modal as a prompt for confirmation since window.confirm is forbidden
             const confirmRemoval = async () => {
                 try {
-                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/items`, itemId));
+                    await deleteDoc(doc(db, `/artifacts/mmstock-8bcdf/users/global/items`, itemId));
                     closeMessageModal();
                     showMessageModal("Success", `Stock Item '${itemName}' removed.`);
                 } catch (error) {
@@ -1569,7 +1575,7 @@ console.log('📦 Firestore write occurred at path:', `/artifacts/${appId}/users
             }
 
             try {
-                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/locations`), {
+                await addDoc(collection(db, `/artifacts/mmstock-8bcdf/users/global/locations`), {
                     name,
                     createdAt: Timestamp.now()
                 });
@@ -1586,7 +1592,7 @@ console.log('📦 Firestore write occurred at path:', `/artifacts/${appId}/users
             // Using a simple modal as a prompt for confirmation since window.confirm is forbidden
             const confirmRemoval = async () => {
                 try {
-                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/locations`, locationId));
+                    await deleteDoc(doc(db, `/artifacts/mmstock-8bcdf/users/global/locations`, locationId));
                     closeMessageModal();
                     showMessageModal("Success", `Location '${locationName}' removed.`);
                 } catch (error) {
@@ -1650,7 +1656,7 @@ console.log('📦 Firestore write occurred at path:', `/artifacts/${appId}/users
             // Define the global confirm handler capturing the item info
             window.__performDeleteItem = async () => {
                 try {
-                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/items`, itemId));
+                    await deleteDoc(doc(db, `/artifacts/mmstock-8bcdf/users/global/items`, itemId));
                     closeMessageModal();
                     showMessageModal("Deleted", `Stock Item '<strong>${itemName}</strong>' was deleted.`);
                     if (typeof loadItems === 'function') { try { loadItems(); } catch (e) { console.warn(e); } }
@@ -1677,7 +1683,7 @@ console.log('📦 Firestore write occurred at path:', `/artifacts/${appId}/users
 
             window.__performDeleteLocation = async () => {
                 try {
-                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/locations`, locationId));
+                    await deleteDoc(doc(db, `/artifacts/mmstock-8bcdf/users/global/locations`, locationId));
                     closeMessageModal();
                     showMessageModal("Deleted", `Location '<strong>${locationName}</strong>' was deleted.`);
                     if (typeof loadLocations === 'function') { try { loadLocations(); } catch (e) { console.warn(e); } }
@@ -1722,10 +1728,13 @@ console.log('📦 Firestore write occurred at path:', `/artifacts/${appId}/users
 // === Diagnostic Logging ===
 window.appId = appId;
 window.userId = userId;
-console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+console.log("✅ Connected to Firestore path:", `/artifacts/mmstock-8bcdf/users/global`);
 
 
-console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+console.log("✅ Connected to Firestore path:", `/artifacts/mmstock-8bcdf/users/global`);
+
+
+console.log("🚀 Firestore will read/write to: /artifacts/mmstock-8bcdf/users/global");
 
 </script>
 </body>
