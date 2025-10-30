@@ -42,7 +42,19 @@
         ::-webkit-scrollbar-track {
             background: #f1f1f1;
         }
-    </style>
+    
+/* --- Enhanced active admin nav highlight --- */
+.admin-nav-item.active {
+    border-left-width: 4px;
+    border-left-color: #38B2AC; /* secondary-teal */
+    background-color: #2fa598;
+    color: #ffffff;
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    transition: all 0.2s ease-in-out;
+}
+
+</style>
 </head>
 <body class="bg-background-light font-sans antialiased">
 
@@ -229,6 +241,15 @@
                                 <p class="text-gray-500 italic">Loading locations...</p>
                             </div>
                         </div>
+
+                        <!-- Admin Password Management -->
+                        <div class="mt-8 p-4 border rounded-lg">
+                            <h4 class="text-xl font-semibold mb-3 text-primary-purple">Admin Password Management</h4>
+                            <p class="text-sm text-gray-600 mb-3">Change the <strong>secondary</strong> admin password. The master password remains fixed.</p>
+                            <input type="password" id="new-secondary-password" placeholder="Enter new secondary admin password" class="p-2 border rounded-lg w-full mb-2">
+                            <button onclick="updateSecondaryPassword()" class="w-full py-2 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Update Secondary Password</button>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -316,26 +337,71 @@
         
         // Admin State
         const ADMIN_PASSWORD = 'admin123';
+        let secondaryAdminPassword = null;
         let isAdmin = false;
         let activeAdminTab = 'log';
         let stockCheckLocationId = null;
 
+
+        // --- Dual Admin Password Support (Master + Secondary) ---
+const loadSecondaryPassword = async () => {
+  // Wait until Firebase auth is ready before Firestore read
+  await firebaseReady;
+
+  const settingsRef = doc(db, `/artifacts/${appId}/config/admin_settings`);
+  try {
+    const snap = await getDoc(settingsRef);
+    if (snap.exists()) {
+      secondaryAdminPassword = snap.data().secondaryPassword || 'pepsimax';
+    } else {
+      await setDoc(settingsRef, { secondaryPassword: 'pepsimax' });
+      secondaryAdminPassword = 'pepsimax';
+    }
+  } catch (err) {
+    console.error("Error loading password:", err);
+    secondaryAdminPassword = 'pepsimax';
+  }
+
+  console.log("Loaded from Firestore:", secondaryAdminPassword);
+  return secondaryAdminPassword;
+};
+
+        window.updateSecondaryPassword = async () => {
+            const newPass = (document.getElementById('new-secondary-password')?.value || '').trim();
+            if (!newPass) {
+                showMessageModal("Error", "Password cannot be empty.");
+                return;
+            }
+            try {
+                const settingsRef = doc(db, `/artifacts/${appId}/config/admin_settings`);
+                await setDoc(settingsRef, { secondaryPassword: newPass }, { merge: true });
+                secondaryAdminPassword = newPass;
+                document.getElementById('new-secondary-password').value = '';
+                showMessageModal("Success", "Secondary admin password updated successfully.");
+            } catch (e) {
+                showMessageModal("Error", "Failed to update password.");
+            }
+        };
+
+
         // --- Firebase Configuration and Environment Variables ---
         
         // The __app_id and __initial_auth_token are provided by the hosting environment.
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const appId = 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // User-provided Firebase Configuration
-        const firebaseConfig = {
-            apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
-            authDomain: "mmstock-8bcdf.firebaseapp.com",
-            projectId: "mmstock-8bcdf",
-            storageBucket: "mmstock-8bcdf.firebasestorage.app",
-            messagingSenderId: "935228101629",
-            appId: "1:935228101629:web:766421e0da43becc323f94",
-            measurementId: "G-NWJ4Z7ZHT8"
-        };
+        
+const firebaseConfig = {
+  apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
+  authDomain: "mmstock-8bcdf.firebaseapp.com",
+  projectId: "mmstock-8bcdf",
+  storageBucket: "mmstock-8bcdf.appspot.com",
+  messagingSenderId: "935228101629",
+  appId: "1:935228101629:web:766421e0da43becc323f94",
+  measurementId: "G-NWJ4Z7ZHT8"
+};
+
 
         // --- Utility Functions ---
 
@@ -687,9 +753,25 @@
         };
 
         /** Opens the checkout modal */
-        window.openCheckoutModal = () => {
-            document.getElementById('checkout-modal').classList.remove('hidden');
-        };
+        
+window.openCheckoutModal = () => {
+    // FIXED: Checkout cart display bug - populate checkout modal with current cart items before showing it
+    const list = document.getElementById('checkout-cart-list');
+    list.innerHTML = '';
+
+    const cartItems = Object.entries(removalCart)
+        .filter(([, qty]) => qty > 0)
+        .map(([itemId, qty]) => ({ itemId, qty, itemName: items.find(i => i.id === itemId)?.name }));
+
+    if (cartItems.length === 0) {
+        list.innerHTML = '<li class="text-gray-500 italic">No items in cart.</li>';
+    } else {
+        list.innerHTML = cartItems.map(item => `<li>${item.itemName} x ${item.qty}</li>`).join('');
+    }
+
+    document.getElementById('checkout-modal').classList.remove('hidden');
+};
+;
 
         /** Closes the checkout modal */
         window.closeCheckoutModal = () => {
@@ -802,6 +884,8 @@
                     showMessageModal("Partial Success", message);
                 } else {
                     showMessageModal("Success!", "Stock removal recorded and levels updated for all items.");
+                // FIXED: Auto-refresh after successful stock removal
+                setTimeout(() => location.reload(), 1500);
                 }
             } else {
                 // All items failed
@@ -1642,6 +1726,33 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
 
             document.getElementById('message-modal').classList.remove('hidden');
         };
+
+        // === Admin Panel Banner (inside tab content) ===
+        function updateAdminBannerInside() {
+            const activeBtn = document.querySelector('.admin-nav-item.active');
+            if (!activeBtn) return;
+            const label = activeBtn.textContent.trim();
+            // remove old banners
+            document.querySelectorAll('.admin-active-banner').forEach(el => el.remove());
+            // find the active tab content
+            const activeTab = document.querySelector(`.admin-tab-content:not(.hidden)`);
+            if (!activeTab) return;
+            const banner = document.createElement('div');
+            banner.className = 'admin-active-banner w-full bg-secondary-teal text-white font-semibold py-2 px-4 rounded-md mb-4 shadow-md text-center';
+            banner.textContent = `Currently Viewing: ${label}`;
+            activeTab.prepend(banner);
+        }
+
+        (function wrapShowAdminTabForBanner(){
+            const oldShow = window.showAdminTab;
+            if (typeof oldShow === 'function') {
+                window.showAdminTab = function(tabId) {
+                    oldShow(tabId);
+                    setTimeout(updateAdminBannerInside, 100);
+                }
+            }
+        })();
+
 </script>
 </body>
 </html>
