@@ -10,6 +10,9 @@ window.appId = appId;
 window.userId = userId;
 console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
 
+
+console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+
 </script>
     <!-- Load Inter font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -33,6 +36,9 @@ console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${use
 // === Diagnostic Logging ===
 window.appId = appId;
 window.userId = userId;
+console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+
+
 console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
 
 </script>
@@ -324,7 +330,7 @@ console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${use
         let app;
         let db;
         let auth;
-        let userId = 'global'; // Shared global user for all devices
+        let userId = 'global'; // Force shared global user // Shared global user for all devices
         let currentAuthUser = null;
 
         // Data Models
@@ -347,7 +353,7 @@ console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${use
         // --- Firebase Configuration and Environment Variables ---
         
         // The __app_id and __initial_auth_token are provided by the hosting environment.
-        const appId = 'mmstock-8bcdf';
+        const appId = 'mmstock-8bcdf'; // Hardcoded project ID
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // User-provided Firebase Configuration
@@ -1519,6 +1525,7 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
             try {
                 const itemRef = doc(db, `/artifacts/${appId}/users/${userId}/items`, itemId);
                 await updateDoc(itemRef, { threshold: newThreshold });
+console.log('📦 Firestore write occurred at path:', `/artifacts/${appId}/users/${userId}`);
                 input.value = '';
                 showMessageModal("Success", "Threshold updated successfully.");
             } catch (error) {
@@ -1715,6 +1722,9 @@ window.deleteTransaction = (transactionId, quantityChange, locationName, itemNam
 // === Diagnostic Logging ===
 window.appId = appId;
 window.userId = userId;
+console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
+
+
 console.log("✅ Connected to Firestore path:", `/artifacts/${appId}/users/${userId}`);
 
 </script>
