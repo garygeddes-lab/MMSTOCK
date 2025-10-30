@@ -241,15 +241,6 @@
                                 <p class="text-gray-500 italic">Loading locations...</p>
                             </div>
                         </div>
-
-                        <!-- Admin Password Management -->
-                        <div class="mt-8 p-4 border rounded-lg">
-                            <h4 class="text-xl font-semibold mb-3 text-primary-purple">Admin Password Management</h4>
-                            <p class="text-sm text-gray-600 mb-3">Change the <strong>secondary</strong> admin password. The master password remains fixed.</p>
-                            <input type="password" id="new-secondary-password" placeholder="Enter new secondary admin password" class="p-2 border rounded-lg w-full mb-2">
-                            <button onclick="updateSecondaryPassword()" class="w-full py-2 bg-secondary-teal text-white rounded-lg hover:bg-secondary-teal/90 transition duration-150">Update Secondary Password</button>
-                        </div>
-
                     </div>
                 </div>
             </div>
@@ -337,71 +328,26 @@
         
         // Admin State
         const ADMIN_PASSWORD = 'admin123';
-        let secondaryAdminPassword = null;
         let isAdmin = false;
         let activeAdminTab = 'log';
         let stockCheckLocationId = null;
 
-
-        // --- Dual Admin Password Support (Master + Secondary) ---
-const loadSecondaryPassword = async () => {
-  // Wait until Firebase auth is ready before Firestore read
-  await firebaseReady;
-
-  const settingsRef = doc(db, `/artifacts/${appId}/config/admin_settings`);
-  try {
-    const snap = await getDoc(settingsRef);
-    if (snap.exists()) {
-      secondaryAdminPassword = snap.data().secondaryPassword || 'pepsimax';
-    } else {
-      await setDoc(settingsRef, { secondaryPassword: 'pepsimax' });
-      secondaryAdminPassword = 'pepsimax';
-    }
-  } catch (err) {
-    console.error("Error loading password:", err);
-    secondaryAdminPassword = 'pepsimax';
-  }
-
-  console.log("Loaded from Firestore:", secondaryAdminPassword);
-  return secondaryAdminPassword;
-};
-
-        window.updateSecondaryPassword = async () => {
-            const newPass = (document.getElementById('new-secondary-password')?.value || '').trim();
-            if (!newPass) {
-                showMessageModal("Error", "Password cannot be empty.");
-                return;
-            }
-            try {
-                const settingsRef = doc(db, `/artifacts/${appId}/config/admin_settings`);
-                await setDoc(settingsRef, { secondaryPassword: newPass }, { merge: true });
-                secondaryAdminPassword = newPass;
-                document.getElementById('new-secondary-password').value = '';
-                showMessageModal("Success", "Secondary admin password updated successfully.");
-            } catch (e) {
-                showMessageModal("Error", "Failed to update password.");
-            }
-        };
-
-
         // --- Firebase Configuration and Environment Variables ---
         
         // The __app_id and __initial_auth_token are provided by the hosting environment.
-        const appId = 'default-app-id';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // User-provided Firebase Configuration
-        
-const firebaseConfig = {
-  apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
-  authDomain: "mmstock-8bcdf.firebaseapp.com",
-  projectId: "mmstock-8bcdf",
-  storageBucket: "mmstock-8bcdf.appspot.com",
-  messagingSenderId: "935228101629",
-  appId: "1:935228101629:web:766421e0da43becc323f94",
-  measurementId: "G-NWJ4Z7ZHT8"
-};
-
+        const firebaseConfig = {
+            apiKey: "AIzaSyAxS1OGhr1bmnm572PRdozNK8mz-sG-PEE",
+            authDomain: "mmstock-8bcdf.firebaseapp.com",
+            projectId: "mmstock-8bcdf",
+            storageBucket: "mmstock-8bcdf.firebasestorage.app",
+            messagingSenderId: "935228101629",
+            appId: "1:935228101629:web:766421e0da43becc323f94",
+            measurementId: "G-NWJ4Z7ZHT8"
+        };
 
         // --- Utility Functions ---
 
